@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#102b3a">
+  <title>Pflegeflur – Alltag im Wohnbereich</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-mark" aria-hidden="true">✚</div>
+    <div class="brand">
+      <strong>PFLEGEFLUR</strong>
+      <span>Wohnbereich · Frühdienst</span>
+    </div>
+    <div class="shift-pill"><span class="live-dot"></span><span id="clock">07:00</span></div>
+  </header>
+
+  <main>
+    <section class="stats" aria-label="Dienstübersicht">
+      <div class="stat-card"><span class="stat-icon blue">♙</span><div><small>Bewohner</small><strong id="resident-count">4</strong></div></div>
+      <div class="stat-card"><span class="stat-icon amber">✓</span><div><small>Aufgaben erledigt</small><strong id="done-count">0 / 12</strong></div></div>
+      <div class="stat-card"><span class="stat-icon green">♥</span><div><small>Wohlbefinden</small><strong id="wellbeing">Gut</strong></div></div>
+    </section>
+
+    <section class="game-panel">
+      <div class="section-heading">
+        <div><p class="eyebrow">WOHNBEREICH A</p><h1>Der Pflegeflur</h1></div>
+        <div class="mini-hint"><span>⌖</span> Tippe auf den Boden, um zu laufen</div>
+      </div>
+
+      <div class="map-frame">
+        <div class="map-legend"><span class="legend-dot resident-legend"></span> Bewohnerzimmer <span class="legend-dot you-legend"></span> Deine Figur</div>
+        <canvas id="game" aria-label="Draufsicht auf den Pflegeflur. Tippe auf eine Stelle, um die Figur dorthin zu bewegen."></canvas>
+        <div class="map-help" id="map-help">Bewohner antippen, um Pflegeaufgaben zu öffnen</div>
+      </div>
+
+      <div class="controls-row">
+        <div class="character-status">
+          <div class="avatar">♙</div>
+          <div><strong>Pflegekraft</strong><span id="movement-status">Bereit für den Dienst</span></div>
+        </div>
+        <button class="secondary-button" id="reset-button" type="button">↻ Dienst neu starten</button>
+      </div>
+    </section>
+
+    <section class="task-panel">
+      <div class="section-heading compact">
+        <div><p class="eyebrow">DEIN ÜBERBLICK</p><h2>Offene Pflegeaufgaben</h2></div>
+        <span class="task-counter" id="task-counter">12 offen</span>
+      </div>
+      <div class="task-list" id="task-list"></div>
+    </section>
+    <p class="footer-note">Demo-Spiel · Der Spielstand wird automatisch auf diesem Gerät gespeichert.</p>
+  </main>
+
+  <div class="modal-backdrop hidden" id="resident-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <section class="resident-modal">
+      <button class="close-button" id="close-modal" aria-label="Schließen">×</button>
+      <div class="modal-kicker" id="modal-room">ZIMMER 101</div>
+      <div class="resident-profile">
+        <div class="resident-avatar" id="modal-avatar">👵</div>
+        <div><h2 id="modal-title">Anna Weber</h2><p id="modal-subtitle">Bewohnerin · Zimmer 101</p><div class="mood-line"><span class="mood-dot"></span><span id="modal-mood">Benötigt Unterstützung</span></div></div>
+      </div>
+      <p class="modal-intro">Welche Pflege möchtest du durchführen?</p>
+      <div class="care-options" id="care-options"></div>
+      <div class="modal-foot">Tippe eine Aufgabe an. Die Figur läuft zum Zimmer, danach wird die Aufgabe erledigt.</div>
+    </section>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="game.js"></script>
+</body>
+</html>

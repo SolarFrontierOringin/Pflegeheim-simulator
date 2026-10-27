@@ -234,3 +234,25 @@ footer{text-align:center;color:#89958d;font-size:11px;padding:10px 12px 25px}foo
   .station-sign{width:38px;height:38px}
   .station-room small{max-width:190px}
 }
+
+/* Bewohnerwechsel, Kontostand und Pflegemittellager */
+.account-overview{display:flex;align-items:center;justify-content:space-between;gap:18px;border-left:5px solid var(--green)}
+.account-overview h3{margin:4px 0 0}.account-overview .muted-copy{margin:6px 0 0}.account-overview>strong{font:800 clamp(24px,4vw,34px) Manrope,sans-serif;white-space:nowrap;color:var(--green)}
+.supply-list{display:grid;gap:10px;margin-top:15px}.supply-card{display:flex;align-items:center;gap:14px;padding:16px;border:1px solid var(--line);border-radius:14px;background:#fff}.supply-icon{width:48px;height:48px;border-radius:13px;background:var(--mint);display:grid;place-items:center;font-size:24px;color:var(--green)}.supply-info{flex:1}.supply-info h3{margin:0 0 5px;font:700 15px Manrope,sans-serif}.supply-info p{margin:0;color:var(--muted);font-size:12px}.supply-count{text-align:right}.supply-count strong,.supply-count span{display:block}.supply-count strong{font:800 22px Manrope,sans-serif}.supply-count span{font-size:11px;color:var(--muted)}.resident-card-actions{display:flex;flex-direction:column;align-items:flex-end;gap:7px}.resident-card-actions .secondary-btn{padding:8px 10px;font-size:11px}.history-tag{font-size:11px;color:var(--muted);background:#f0f2ee;padding:7px 9px;border-radius:8px;white-space:nowrap}.top-stats strong#topCash{font-size:16px}.nav-tabs{overflow-x:auto}.nav-btn{white-space:nowrap}
+@media(max-width:620px){.account-overview{align-items:flex-start;flex-direction:column}.resident-card-actions{width:100%;flex-direction:row;align-items:center;justify-content:space-between}.supply-card{padding:12px}.top-stats strong#topCash{font-size:14px}}
+
+/* Pflegemittel bestellen */
+.supply-list{display:grid;gap:12px;margin-top:15px}
+.supply-card{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:15px;border:1px solid var(--line);border-radius:13px;background:#fff}
+.supply-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:var(--mint);font-size:22px;flex-shrink:0}
+.supply-info{flex:1;min-width:140px}
+.supply-info h3{font:700 15px Manrope,sans-serif;margin:0 0 5px}
+.supply-info p{font-size:12px;color:var(--muted);margin:0;line-height:1.5}
+.supply-count{text-align:center;min-width:78px}
+.supply-count strong{display:block;font:800 22px Manrope,sans-serif}
+.supply-count span{font-size:10px;color:var(--muted)}
+.supply-order{display:flex;align-items:center;gap:7px;flex-wrap:wrap;width:100%;padding-top:10px;border-top:1px solid var(--line)}
+.supply-order label{font-size:12px;color:var(--muted)}
+.supply-order input{width:90px;border:1px solid var(--line);border-radius:8px;padding:9px}
+.supply-order .primary-btn{padding:10px 14px}
+@media(min-width:650px){.supply-order{width:auto;margin-left:auto;border-top:0;padding-top:0}}

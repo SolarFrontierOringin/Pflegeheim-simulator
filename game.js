@@ -56,13 +56,18 @@
           parsed.nextProspectIndex = Number.isInteger(parsed.nextProspectIndex) ? parsed.nextProspectIndex : (parsed.nextId || parsed.requests.length + 1);
           parsed.staff = Array.isArray(parsed.staff) ? parsed.staff : [];
           parsed.staffContracts = Array.isArray(parsed.staffContracts) ? parsed.staffContracts : [];
+          parsed.departureHistory = Array.isArray(parsed.departureHistory) ? parsed.departureHistory : [];
+          parsed.financeHistory = Array.isArray(parsed.financeHistory) ? parsed.financeHistory : [];
+          parsed.supplies = parsed.supplies && typeof parsed.supplies === "object" ? parsed.supplies : { einlagen: 0 };
+          if (!Number.isFinite(parsed.nextResidentEventAt)) parsed.nextResidentEventAt = parsed.gameMinutes + 5 * 1440;
+          if (!Number.isFinite(parsed.lastSettledMonth)) parsed.lastSettledMonth = Math.floor(parsed.gameMinutes / (30 * 1440));
           return parsed;
         }
       }
     } catch (e) {}
     const requests = [];
     for (let i = 0; i < 6; i++) requests.push(makeRequest(i));
-    return { requests, residents: [], contracts: [], staff: [], staffContracts: [], nextId: 7, nextProspectIndex: 7, nextRequestAt: 8 * 60 + REQUEST_INTERVAL_GAME_MINUTES, upgrades: 0, cash: 250000, gameMinutes: 8 * 60 };
+    return { requests, residents: [], contracts: [], staff: [], staffContracts: [], departureHistory: [], financeHistory: [], supplies: {einlagen: 0, waschlotion: 0}, nextId: 7, nextProspectIndex: 7, nextRequestAt: 8 * 60 + REQUEST_INTERVAL_GAME_MINUTES, nextResidentEventAt: 8 * 60 + 5 * 1440, lastSettledMonth: 0, upgrades: 0, cash: 250000, gameMinutes: 8 * 60 };
   }
   function saveState() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
@@ -204,6 +209,13 @@
       walker.classList.toggle("walking-left", Math.random() < 0.5);
     };
     layer.querySelectorAll(".resident-walker").forEach(walker => {
+      const caredFor = state.staff.find(person => person.task === "care" && String(person.targetResidentId) === String(walker.dataset.walkerId));
+      if (caredFor) {
+        const resident = state.residents.find(r => String(r.id ?? r.contractNo) === String(caredFor.targetResidentId));
+        const room = resident && host.querySelector(`[data-room-number="${Number(resident.roomNumber)}"]`);
+        moveTo(walker, room, .68);
+        return;
+      }
       const target = Math.random() < .25 && commonArea ? commonArea : walkways[Math.floor(Math.random() * Math.max(1, walkways.length))];
       moveTo(walker, target);
     });
@@ -237,6 +249,7 @@
     if (page === "upgrades") renderUpgrades();
     if (page === "floorplan") renderFloorPlan();
     if (page === "staff") renderStaff();
+    if (page === "supplies") renderSupplies();
     window.scrollTo({top: 0, behavior: "smooth"});
   }
   function render() {
@@ -261,7 +274,9 @@
     renderFinances();
     renderUpgrades();
     renderStaff();
+    renderSupplies();
     updateClockDisplay();
+    updateAccountDisplay();
     saveState();
   }
   function emptyState(icon, title, body) {
@@ -283,7 +298,7 @@
       <div class="person-main"><h3>${escapeHtml(r.firstName)} ${escapeHtml(r.lastName)}</h3>
       <p>${r.age} Jahre · Eingezogen am ${escapeHtml(r.moveInDate || "—")}</p>
       <div class="tag-row"><span class="tag">Zimmer ${escapeHtml(r.roomNumber || "—")}</span><span class="tag">${escapeHtml(r.floor ? floorName(r.floor) : r.room)}</span><span class="tag">${escapeHtml(r.care)}</span><span class="tag">Vertrag #${r.contractNo}</span></div></div>
-      <span class="resident-state">Aufgenommen</span></article>`;
+      <div class="resident-card-actions"><span class="resident-state">Aufgenommen</span><button class="secondary-btn" data-depart-resident="${escapeHtml(r.id)}">Auszug buchen</button></div></article>`;
   }
   function renderContracts() {
     const requests = state.requests.filter(r => r.status === "offen");
@@ -297,6 +312,8 @@
     const q = ($("residentSearch").value || "").trim().toLocaleLowerCase("de-DE");
     const residents = state.residents.filter(r => `${r.firstName} ${r.lastName}`.toLocaleLowerCase("de-DE").includes(q));
     $("residentList").innerHTML = residents.length ? residents.map(residentCard).join("") : emptyState("⌕", q ? "Niemand gefunden" : "Noch keine Bewohner", q ? "Versuche einen anderen Namen." : "Bewohner ziehen nach Abschluss eines Heimvertrags ein.");
+    const history = (state.departureHistory || []).slice().reverse();
+    if ($("departureHistory")) $("departureHistory").innerHTML = history.length ? history.map(r => `<div class="finance-row"><div><strong>${escapeHtml(r.firstName)} ${escapeHtml(r.lastName)}</strong><small>${escapeHtml(r.departureDate || "—")} · ${escapeHtml(r.departureReason || "Auszug")}</small></div><span class="history-tag">${r.departureReason === "Verstorben" ? "Verstorben" : "Ausgezogen"}</span></div>`).join("") : emptyState("▤", "Noch keine Einträge", "Bewohnerwechsel erscheinen hier, sobald ein Ereignis eintritt.");
   }
   function showToast(message) {
     $("toast").textContent = message;
@@ -379,9 +396,114 @@
     $("monthlyIncome").textContent = formatEuro(income);
     $("monthlyCosts").textContent = formatEuro(costs);
     $("monthlyBalance").textContent = formatEuro(income - costs);
+    updateAccountDisplay();
     const residentRows = state.residents.map(r => `<div class="finance-row"><div><strong>${escapeHtml(r.firstName)} ${escapeHtml(r.lastName)}</strong><small>Monatsbeitrag · Heimvertrag #${r.contractNo}</small></div><div class="finance-amount income">+${formatEuro(Number(r.monthlyFee) || MONTHLY_FEE)}</div></div>`);
     const staffRows = state.staff.map(person => `<div class="finance-row"><div><strong>${escapeHtml(person.firstName)} ${escapeHtml(person.lastName)} · Pflege</strong><small>Monatsgehalt · Arbeitsvertrag #${person.contractNo}</small></div><div class="finance-amount expense">−${formatEuro(Number(person.monthlySalary) || 0)}</div></div>`);
     $("financeList").innerHTML = residentRows.concat(staffRows).join("") || emptyState("€", "Noch keine Buchungen", "Bewohnerbeiträge und Personalkosten erscheinen nach Vertragsabschlüssen hier.");
+  }
+  function updateAccountDisplay() {
+    if ($("accountBalance")) $("accountBalance").textContent = formatEuro(Number(state.cash) || 0);
+    if ($("topCash")) $("topCash").textContent = formatEuro(Number(state.cash) || 0);
+  }
+  function renderSupplies() {
+    if (!$("supplyList")) return;
+    if (!state.supplies || typeof state.supplies !== "object") state.supplies = {einlagen: 0, waschlotion: 0};
+    if (!Number.isFinite(Number(state.supplies.einlagen))) state.supplies.einlagen = 0;
+    if (!Number.isFinite(Number(state.supplies.waschlotion))) state.supplies.waschlotion = 0;
+    const einlagen = Math.max(0, Number(state.supplies.einlagen) || 0);
+    const waschlotion = Math.max(0, Number(state.supplies.waschlotion) || 0);
+    $("supplyTypeCount").textContent = "2";
+    $("supplyTotal").textContent = String(einlagen + waschlotion);
+    $("supplyList").innerHTML = `<article class="supply-card"><div class="supply-icon">＋</div><div class="supply-info"><h3>Einlagen</h3><p>2,00 € pro Stück · Verbrauch bei jeder Bewohner-Versorgung</p></div><div class="supply-count"><strong>${einlagen}</strong><span>Stück auf Lager</span></div><div class="supply-order"><label for="orderEinlagen">Bestellmenge</label><input id="orderEinlagen" type="number" min="1" step="1" value="10"><button class="primary-btn" data-order-supply="einlagen">Bestellen</button></div></article><article class="supply-card"><div class="supply-icon">🧴</div><div class="supply-info"><h3>Wasch-Lotion</h3><p>10,00 € pro Stück · Verbrauch bei jeder Bewohner-Versorgung</p></div><div class="supply-count"><strong>${waschlotion}</strong><span>Stück auf Lager</span></div><div class="supply-order"><label for="orderWaschlotion">Bestellmenge</label><input id="orderWaschlotion" type="number" min="1" step="1" value="10"><button class="primary-btn" data-order-supply="waschlotion">Bestellen</button></div></article>`;
+  }
+  function orderSupply(type) {
+    const prices = {einlagen: 2, waschlotion: 10};
+    const labels = {einlagen: "Einlagen", waschlotion: "Wasch-Lotion"};
+    const inputId = type === "einlagen" ? "orderEinlagen" : "orderWaschlotion";
+    const quantity = Number($(inputId)?.value);
+    if (!prices[type] || !Number.isInteger(quantity) || quantity < 1) {
+      showToast("Bitte eine gültige Bestellmenge von mindestens 1 Stück eingeben.");
+      return;
+    }
+    const total = quantity * prices[type];
+    if (total > Number(state.cash || 0)) {
+      showToast(`Die Bestellung kostet ${formatEuro(total)}. Dein Kontostand reicht dafür nicht aus.`);
+      return;
+    }
+    state.cash = Number(state.cash || 0) - total;
+    if (!state.supplies || typeof state.supplies !== "object") state.supplies = {einlagen: 0, waschlotion: 0};
+    state.supplies[type] = Math.max(0, Number(state.supplies[type]) || 0) + quantity;
+    state.financeHistory = Array.isArray(state.financeHistory) ? state.financeHistory : [];
+    state.financeHistory.unshift({title: `Pflegemittel bestellt: ${labels[type]} (${quantity} Stück)`, amount: -total, date: gameDateLabel()});
+    saveState();
+    render();
+    showToast(`${quantity} ${labels[type]} bestellt. Abgebucht: ${formatEuro(total)}.`);
+  }
+  function startResidentCare(person) {
+    const resident = state.residents.find(r => String(r.id ?? r.contractNo) === String(person.targetResidentId));
+    if (!resident) {
+      person.task = "idle";
+      person.targetResidentId = null;
+      showToast("Bitte zuerst einen Bewohner für die Versorgung auswählen.");
+      return false;
+    }
+    if ((Number(state.supplies?.einlagen) || 0) < 1 || (Number(state.supplies?.waschlotion) || 0) < 1) {
+      person.task = "idle";
+      showToast("Nicht genug Pflegemittel: Für die Versorgung werden 1 Einlage und 1 Wasch-Lotion benötigt.");
+      return false;
+    }
+    state.supplies.einlagen -= 1;
+    state.supplies.waschlotion -= 1;
+    person.targetResidentId = resident.id ?? resident.contractNo;
+    person.task = "care";
+    person.floor = Number(resident.floor) || person.floor || 1;
+    showToast(`${person.firstName} versorgt ${resident.firstName} ${resident.lastName} in Zimmer ${resident.roomNumber}. Verbrauch: 1 Einlage und 1 Wasch-Lotion.`);
+    return true;
+  }
+  function leaveResident(residentId, reason = "home") {
+    const index = state.residents.findIndex(r => String(r.id ?? r.contractNo) === String(residentId));
+    if (index < 0) return;
+    const resident = state.residents[index];
+    const death = reason === "death";
+    const eventDate = gameDateLabel();
+    state.departureHistory.push({...resident, departureReason: death ? "Verstorben" : "Nach Hause ausgezogen", departureDate: eventDate});
+    state.residents.splice(index, 1);
+    state.staff.forEach(person => {
+      if (String(person.targetResidentId) === String(resident.id)) person.targetResidentId = null;
+    });
+    render();
+    refreshFloorIfVisible();
+    showToast(death ? `Traurige Nachricht: ${resident.firstName} ${resident.lastName} ist verstorben.` : `${resident.firstName} ${resident.lastName} ist wieder nach Hause gezogen.`);
+  }
+  function gameDateLabel() {
+    const total = Math.floor(gameMinutes), day = Math.floor(total / 1440), mins = total % 1440;
+    const date = new Date(Date.UTC(2027, 0, 1 + day));
+    return `${date.toLocaleDateString("de-DE", {timeZone:"UTC"})} ${String(Math.floor(mins/60)).padStart(2,"0")}:${String(mins%60).padStart(2,"0")}`;
+  }
+  function processResidentEvents() {
+    if (!Number.isFinite(state.nextResidentEventAt)) state.nextResidentEventAt = gameMinutes + 5 * 1440;
+    while (gameMinutes >= state.nextResidentEventAt) {
+      state.nextResidentEventAt += (4 + Math.floor(Math.random() * 7)) * 1440;
+      if (!state.residents.length || Math.random() > 0.58) continue;
+      const resident = state.residents[Math.floor(Math.random() * state.residents.length)];
+      // Residents may occasionally pass away or return home; each event releases their room.
+      leaveResident(resident.id ?? resident.contractNo, Math.random() < 0.55 ? "death" : "home");
+    }
+  }
+  function settleGameMonth() {
+    const monthIndex = Math.floor(gameMinutes / (30 * 1440));
+    if (!Number.isFinite(state.lastSettledMonth)) state.lastSettledMonth = monthIndex;
+    while (state.lastSettledMonth < monthIndex) {
+      const income = state.residents.reduce((sum, r) => sum + (Number(r.monthlyFee) || MONTHLY_FEE), 0);
+      const residentCosts = state.residents.reduce((sum, r) => sum + (Number(r.monthlyCost) || 0), 0);
+      const staffCosts = state.staff.reduce((sum, person) => sum + (Number(person.monthlySalary) || 0), 0);
+      const totalCosts = residentCosts + staffCosts;
+      const net = income - totalCosts;
+      state.cash = (Number(state.cash) || 0) + net;
+      state.financeHistory.push({date: gameDateLabel(), income, costs: totalCosts, net, balance: state.cash, description: "Monatsabrechnung"});
+      state.lastSettledMonth++;
+      showToast(`Monatsabrechnung: ${formatEuro(net)} ${net >= 0 ? "Gutschrift" : "Abbuchung"}.`);
+    }
   }
   function renderUpgrades() {
     const count = state.upgrades || 0;
@@ -470,6 +592,8 @@
     gameMinutes += (elapsedMs / 60000) * 60 * gameSpeed;
     state.gameMinutes = gameMinutes;
     processScheduledRequests();
+    processResidentEvents();
+    settleGameMonth();
     updateClockDisplay();
     render();
   }
@@ -486,8 +610,12 @@
     const declineBtn = e.target.closest("[data-decline]");
     if (contractBtn) openContract(Number(contractBtn.dataset.contract));
     if (declineBtn) declineRequest(Number(declineBtn.dataset.decline));
+    const departBtn = e.target.closest("[data-depart-resident]");
+    if (departBtn) { const resident = state.residents.find(r => String(r.id ?? r.contractNo) === String(departBtn.dataset.departResident)); if (resident && confirm(`${resident.firstName} ${resident.lastName} aus dem Heim ausziehen lassen?`)) leaveResident(departBtn.dataset.departResident, "home"); }
     const upgradeBtn = e.target.closest("[data-upgrade]");
     if (upgradeBtn) buyUpgrade(Number(upgradeBtn.dataset.upgrade));
+    const supplyBtn = e.target.closest("[data-order-supply]");
+    if (supplyBtn) orderSupply(supplyBtn.dataset.orderSupply);
     const staffBtn = e.target.closest("[data-staff-contract]");
     if (staffBtn) openStaffContract(staffBtn.dataset.staffContract);
     if (e.target.closest("[data-close-modal]")) closeModal();
@@ -498,17 +626,34 @@
     if (taskSelect) {
       const person = state.staff.find(item => String(item.id) === taskSelect.dataset.staffTask);
       if (person) {
-        person.task = taskSelect.value;
-        if (person.task === "care" && !person.targetResidentId) person.targetResidentId = state.residents.find(r => Number(r.floor) === Number(person.floor))?.id || state.residents[0]?.id || null;
+        if (taskSelect.value === "care") {
+          if (!person.targetResidentId) person.targetResidentId = state.residents.find(r => Number(r.floor) === Number(person.floor))?.id ?? state.residents[0]?.id ?? null;
+          startResidentCare(person);
+        } else {
+          person.task = taskSelect.value;
+          if (person.task === "idle") person.targetResidentId = null;
+          showToast(person.task === "idle" ? `${person.firstName} wartet wieder im Stationszimmer.` : `${person.firstName}: Tätigkeit läuft bis du sie änderst oder abbrichst.`);
+        }
         render();
         refreshFloorIfVisible();
-        showToast(person.task === "idle" ? `${person.firstName} wartet wieder im Stationszimmer.` : `${person.firstName}: Tätigkeit läuft bis du sie änderst oder abbrichst.`);
       }
     }
     const targetSelect = e.target.closest("[data-staff-target]");
     if (targetSelect) {
       const person = state.staff.find(item => String(item.id) === targetSelect.dataset.staffTarget);
-      if (person) { person.targetResidentId = targetSelect.value || null; saveState(); refreshFloorIfVisible(); }
+      if (person) {
+        const nextTarget = targetSelect.value || null;
+        if (person.task === "care" && nextTarget !== String(person.targetResidentId || "")) {
+          person.task = "idle";
+          person.targetResidentId = nextTarget;
+          startResidentCare(person);
+          render();
+        } else {
+          person.targetResidentId = nextTarget;
+          saveState();
+        }
+        refreshFloorIfVisible();
+      }
     }
   });
   document.querySelectorAll("[data-floor]").forEach(btn => btn.addEventListener("click", () => { selectedFloor = Number(btn.dataset.floor); renderFloorPlan(); }));

@@ -17,6 +17,7 @@
     <div class="top-stats">
       <div><span>Bewohner</span><strong id="residentCount">0 / 100</strong></div>
       <div><span>Spielzeit</span><strong id="gameClock">01.01.2027 08:00</strong></div>
+      <div><span>Kontostand</span><strong id="topCash">250.000 €</strong></div>
       <div><span>Offene Anfragen</span><strong id="requestCount">0</strong></div>
     </div>
   </header>
@@ -39,6 +40,7 @@
       <button class="nav-btn" data-page="upgrades">Gebäude</button>
       <button class="nav-btn" data-page="floorplan">Wohnbereiche</button>
       <button class="nav-btn" data-page="staff">Mitarbeiter</button>
+      <button class="nav-btn" data-page="supplies">Pflegemittel</button>
     </nav>
 
     <section id="page-overview" class="page">
@@ -83,7 +85,7 @@
         <div><div class="eyebrow">BEWOHNERREGISTER</div><h2>Bewohner</h2><p>Alle aufgenommenen Bewohner deines Heims</p></div>
       </div>
       <div class="search-row"><input id="residentSearch" type="search" placeholder="Bewohner suchen …" aria-label="Bewohner suchen"><span id="residentTotalLabel">0 Bewohner</span></div>
-      <div id="residentList" class="card-list"></div>
+      <div id="residentList" class="card-list"></div><div class="panel inner-panel"><h3>Bewohner-Chronik</h3><p class="muted-copy">Verstorbene Bewohner und Bewohner, die nach Hause gezogen sind, bleiben hier in der Chronik vermerkt.</p><div id="departureHistory" class="finance-list"></div></div>
     </section>
     <section id="page-floorplan" class="page hidden">
       <div class="section-heading">
@@ -106,7 +108,12 @@
       <div class="panel inner-panel"><h3>Pflegekräfte einstellen</h3><p class="muted-copy">Wähle eine Bewerberin oder einen Bewerber und prüfe den Arbeitsvertrag. Das Monatsgehalt wird bei Vertragsabschluss zwischen 900 € und 1.100 € festgelegt.</p><div id="staffCandidateList" class="card-list"></div></div>
       <div class="panel inner-panel"><h3>Angestellte Pflegekräfte</h3><p class="muted-copy">Angestellte bewegen sich in den Wohnbereichen über die Gänge und gehen zu Bewohnerzimmern.</p><div id="staffList" class="card-list"></div></div>
     </section>
-    <section id="page-finances" class="page hidden"><div class="section-heading"><div><div class="eyebrow">KASSE & ABRECHNUNG</div><h2>Finanzen</h2><p>Monatliche Bewohnerbeiträge und laufende Kosten</p></div></div><div class="metric-grid"><article class="metric"><span>Monatliche Einnahmen</span><strong id="monthlyIncome">0 €</strong><small>1.700 € pro Bewohner</small></article><article class="metric"><span>Bewohnerkosten</span><strong id="monthlyCosts">0 €</strong><small>Aktuell hinterlegte Kosten</small></article><article class="metric"><span>Monatlicher Saldo</span><strong id="monthlyBalance">0 €</strong><small>Einnahmen minus Kosten</small></article></div><div class="panel inner-panel"><h3>Einnahmen und laufende Kosten</h3><p class="muted-copy">Jeder aufgenommene Bewohner zahlt monatlich 1.700 €. Gehälter der Pflegekräfte werden als monatliche Personalkosten abgezogen.</p><div id="financeList" class="finance-list"></div></div><div class="panel inner-panel"><h3>Kostenannahme</h3><p class="muted-copy">Für den Anfang wurden keine individuellen Pflege- oder Betriebskosten vorgegeben. Deshalb zeigt das Spiel die Bewohnerbeiträge als Einnahmen und Bewohnerkosten zunächst mit 0 € an.</p></div></section>
+    <section id="page-finances" class="page hidden"><div class="section-heading"><div><div class="eyebrow">KASSE & ABRECHNUNG</div><h2>Finanzen</h2><p>Monatliche Bewohnerbeiträge und laufende Kosten</p></div></div><div class="panel inner-panel account-overview"><div><div class="eyebrow">KONTOÜBERSICHT</div><h3>Gesamtes verfügbares Geld</h3><p class="muted-copy">Startkapital plus Monatsabrechnungen, abzüglich Kosten und Gebäude-Upgrades.</p></div><strong id="accountBalance">250.000 €</strong></div><div class="metric-grid"><article class="metric"><span>Monatliche Einnahmen</span><strong id="monthlyIncome">0 €</strong><small>1.700 € pro Bewohner</small></article><article class="metric"><span>Bewohnerkosten</span><strong id="monthlyCosts">0 €</strong><small>Aktuell hinterlegte Kosten</small></article><article class="metric"><span>Monatlicher Saldo</span><strong id="monthlyBalance">0 €</strong><small>Einnahmen minus Kosten</small></article></div><div class="panel inner-panel"><h3>Einnahmen und laufende Kosten</h3><p class="muted-copy">Jeder aufgenommene Bewohner zahlt monatlich 1.700 €. Gehälter der Pflegekräfte werden als monatliche Personalkosten abgezogen.</p><div id="financeList" class="finance-list"></div></div><div class="panel inner-panel"><h3>Kostenannahme</h3><p class="muted-copy">Für den Anfang wurden keine individuellen Pflege- oder Betriebskosten vorgegeben. Deshalb zeigt das Spiel die Bewohnerbeiträge als Einnahmen und Bewohnerkosten zunächst mit 0 € an.</p></div></section>
+    <section id="page-supplies" class="page hidden">
+      <div class="section-heading"><div><div class="eyebrow">LAGER & VERSORGUNG</div><h2>Pflegemittel</h2><p>Bestand der Pflege- und Verbrauchsmaterialien im Laurentiushaus.</p></div></div>
+      <div class="metric-grid"><article class="metric"><span>Materialarten</span><strong id="supplyTypeCount">2</strong><small>im Lager geführt</small></article><article class="metric"><span>Gesamtbestand</span><strong id="supplyTotal">0</strong><small>Einheiten</small></article><article class="metric"><span>Materialkosten</span><strong>—</strong><small>Preise noch nicht festgelegt</small></article></div>
+      <div class="panel inner-panel"><h3>Pflegemittellager</h3><p class="muted-copy">Hier wird der verfügbare Bestand geführt. Anfangsbestand: 0 Einlagen und 0 Wasch-Lotionen. Bei jeder Bewohner-Versorgung werden je 1 Stück verbraucht.</p><div id="supplyList" class="supply-list"></div></div>
+    </section>
     <section id="page-upgrades" class="page hidden"><div class="section-heading"><div><div class="eyebrow">AUSBAU</div><h2>Gebäude-Upgrades</h2><p>Erweitere das Laurentiushaus um zusätzliche Zimmer.</p></div></div><div class="upgrade-summary panel inner-panel"><span>Aktuelle Zimmerkapazität</span><strong id="capacityDisplay">100 Zimmer</strong><p id="upgradeProgress">0 von 3 Upgrades gekauft</p></div><div id="upgradeList" class="upgrade-list"></div></section>
   </main>
 

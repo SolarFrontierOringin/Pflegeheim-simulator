@@ -1,322 +1,523 @@
 (() => {
   "use strict";
-
-  const canvas = document.getElementById("game");
-  const ctx = canvas.getContext("2d");
-  const modal = document.getElementById("resident-modal");
-  const toast = document.getElementById("toast");
-  const WORLD = { w: 900, h: 610, hallTop: 185, hallBottom: 425 };
-  const SAVE_KEY = "pflegeflur-save-v1";
-
-  const careTypes = [
-    { id: "wash", label: "Waschen", icon: "♨", detail: "Körperpflege" },
-    { id: "dress", label: "Anziehen", icon: "♧", detail: "Kleidung wechseln" },
-    { id: "food", label: "Essen geben", icon: "♨", detail: "Frühstück" }
+  const BASE_ROOMS = 100, ROOMS_PER_UPGRADE = 20, MAX_UPGRADES = 3, MONTHLY_FEE = 1700;
+  const STORAGE_KEY = "altenheimSimulatorSave_v1";
+  const upgradeDefinitions = [
+    {id:1,name:"Westflügel erweitern",description:"Ein neuer Gebäudeflügel mit zusätzlichen Einzelzimmern.",cost:50000,icon:"🏢"},
+    {id:2,name:"Gartenflügel anbauen",description:"Mehr Zimmer mit Blick auf den Innenhof und Garten.",cost:85000,icon:"🌿"},
+    {id:3,name:"Neuer Wohnbereich",description:"Ein zusätzlicher Wohnbereich für weitere Bewohner.",cost:125000,icon:"🏡"}
   ];
-
-  const residents = [
-    { id: 1, room: "101", name: "Anna Weber", age: 82, avatar: "👵", side: "top", x: 155, y: 92, needs: ["wash","dress","food"], done: [], mood: "Benötigt Unterstützung" },
-    { id: 2, room: "102", name: "Karl Fischer", age: 78, avatar: "👴", side: "bottom", x: 335, y: 518, needs: ["wash","dress","food"], done: [], mood: "Wartet auf Hilfe" },
-    { id: 3, room: "103", name: "Martha Schulz", age: 86, avatar: "👵", side: "top", x: 515, y: 92, needs: ["wash","dress","food"], done: [], mood: "Benötigt Unterstützung" },
-    { id: 4, room: "104", name: "Paul Becker", age: 80, avatar: "👴", side: "bottom", x: 695, y: 518, needs: ["wash","dress","food"], done: [], mood: "Wartet auf Hilfe" }
+  const staffCandidates = [
+    {id:"pf1",firstName:"Anna",lastName:"Berger",role:"Pflegefachkraft"},
+    {id:"pf2",firstName:"Markus",lastName:"Keller",role:"Pflegefachkraft"},
+    {id:"pf3",firstName:"Sabine",lastName:"Fischer",role:"Pflegefachkraft"},
+    {id:"pf4",firstName:"Thomas",lastName:"Wagner",role:"Pflegefachkraft"},
+    {id:"pf5",firstName:"Nadine",lastName:"Schulz",role:"Pflegefachkraft"},
+    {id:"pf6",firstName:"Michael",lastName:"Hoffmann",role:"Pflegefachkraft"}
   ];
+  const names = [
+    ["Hildegard","Müller",84],["Friedrich","Schneider",89],["Erna","Fischer",91],
+    ["Wilhelm","Weber",86],["Gertrud","Meyer",88],["Heinrich","Wagner",82],
+    ["Margarete","Becker",90],["Karl","Schulz",85],["Elisabeth","Hoffmann",87],
+    ["Otto","Schäfer",92],["Anneliese","Koch",83],["Walter","Bauer",88],
+    ["Irmgard","Richter",86],["Herbert","Klein",81],["Ingeborg","Wolf",90],
+    ["Günther","Schröder",84],["Lieselotte","Neumann",89],["Helmut","Schwarz",87],
+    ["Renate","Zimmermann",82],["Rudolf","Braun",91],["Else","Krüger",88],
+    ["Werner","Hofmann",85],["Martha","Hartmann",93],["Erich","Lange",86],
+    ["Dorothea","Schmitt",84],["Franz","Werner",90],["Ursula","Schmitz",83],
+    ["Alfred","Krause",87],["Elfriede","Meier",92],["Hans","Lehmann",89]
+  ];
+  const careLevels = ["Selbstständig","Leichte Unterstützung","Mittlerer Pflegebedarf","Hoher Pflegebedarf"];
+  const roomTypes = ["Einzelzimmer","Einzelzimmer mit Balkon","Barrierefreies Zimmer"];
+  const $ = id => document.getElementById(id);
+  let gameSpeed = 1;
+  let lastRealTime = Date.now();
+  let gameMinutes = 8 * 60;
+  const REQUEST_INTERVAL_GAME_MINUTES = 4 * 60;
+  let state = loadState();
+  gameMinutes = Number.isFinite(state.gameMinutes) ? state.gameMinutes : 8 * 60;
+  migrateResidentRooms();
+  let activeRequestId = null;
+  let contractTab = "requests";
+  let selectedFloor = 1;
+  let activeStaffId = null;
+  let toastTimer;
 
-  const player = { x: 450, y: 305, tx: 450, ty: 305, speed: 205, moving: false };
-  let activeResident = null;
-  let lastFrame = 0;
-  let gameMinutes = 420;
-  let toastTimer = null;
-
-  function loadSave() {
+  function loadState() {
     try {
-      const saved = JSON.parse(localStorage.getItem(SAVE_KEY) || "null");
-      if (!saved) return;
-      gameMinutes = Number.isFinite(saved.gameMinutes) ? saved.gameMinutes : 420;
-      if (saved.residents) residents.forEach(r => {
-        const old = saved.residents.find(s => s.id === r.id);
-        if (old && Array.isArray(old.done)) r.done = old.done.filter(id => r.needs.includes(id));
-      });
-      if (saved.player && Number.isFinite(saved.player.x) && Number.isFinite(saved.player.y)) {
-        player.x = player.tx = saved.player.x;
-        player.y = player.ty = saved.player.y;
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.requests) && Array.isArray(parsed.residents) && Array.isArray(parsed.contracts)) {
+          parsed.upgrades = Number.isInteger(parsed.upgrades) ? parsed.upgrades : 0;
+          parsed.cash = Number.isFinite(parsed.cash) ? parsed.cash : 250000;
+          parsed.gameMinutes = Number.isFinite(parsed.gameMinutes) ? parsed.gameMinutes : 8 * 60;
+          parsed.nextRequestAt = Number.isFinite(parsed.nextRequestAt) ? parsed.nextRequestAt : parsed.gameMinutes + REQUEST_INTERVAL_GAME_MINUTES;
+          parsed.nextProspectIndex = Number.isInteger(parsed.nextProspectIndex) ? parsed.nextProspectIndex : (parsed.nextId || parsed.requests.length + 1);
+          parsed.staff = Array.isArray(parsed.staff) ? parsed.staff : [];
+          parsed.staffContracts = Array.isArray(parsed.staffContracts) ? parsed.staffContracts : [];
+          return parsed;
+        }
       }
-    } catch (_) {}
+    } catch (e) {}
+    const requests = [];
+    for (let i = 0; i < 6; i++) requests.push(makeRequest(i));
+    return { requests, residents: [], contracts: [], staff: [], staffContracts: [], nextId: 7, nextProspectIndex: 7, nextRequestAt: 8 * 60 + REQUEST_INTERVAL_GAME_MINUTES, upgrades: 0, cash: 250000, gameMinutes: 8 * 60 };
   }
-  function saveGame() {
-    try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify({
-        gameMinutes,
-        residents: residents.map(r => ({ id: r.id, done: r.done })),
-        player: { x: player.x, y: player.y }
-      }));
-    } catch (_) {}
+  function saveState() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    catch (e) { showToast("Speichern nicht möglich. Bitte Gerätespeicher prüfen."); }
   }
-
-  function resizeCanvas() {
-    const width = Math.max(300, canvas.clientWidth);
-    const height = width * WORLD.h / WORLD.w;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.round(width * dpr);
-    canvas.height = Math.round(height * dpr);
-    canvas.style.height = `${height}px`;
-    ctx.setTransform(canvas.width / WORLD.w, 0, 0, canvas.height / WORLD.h, 0, 0);
-    draw();
-  }
-
-  function roundedRect(x, y, w, h, r, fill, stroke = null, lineWidth = 1) {
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, r);
-    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
-    if (stroke) { ctx.lineWidth = lineWidth; ctx.strokeStyle = stroke; ctx.stroke(); }
-  }
-
-  function drawRoom(r, index) {
-    const roomW = 164, roomH = 178;
-    const x = 48 + index * 184;
-    const y = r.side === "top" ? 8 : 424;
-    roundedRect(x, y, roomW, roomH, 7, "#f9fbfa", "#b9cecf", 2);
-    // Wood floor planks
-    ctx.save();
-    ctx.beginPath(); ctx.rect(x + 3, y + 3, roomW - 6, roomH - 6); ctx.clip();
-    ctx.strokeStyle = "#e7d8c6"; ctx.lineWidth = 1;
-    for (let yy = y + 16; yy < y + roomH; yy += 19) {
-      ctx.beginPath(); ctx.moveTo(x + 3, yy); ctx.lineTo(x + roomW - 3, yy); ctx.stroke();
-    }
-    ctx.restore();
-
-    // Window
-    roundedRect(x + 16, y + 10, 46, 7, 2, "#b8dce5");
-    ctx.fillStyle = "#9dcbd8"; ctx.fillRect(x + 38, y + 10, 2, 7);
-    // Bed, pillow and blanket
-    roundedRect(x + 47, y + 39, 91, 94, 7, "#e8eef0", "#c6d4d8");
-    roundedRect(x + 55, y + 46, 75, 27, 5, "#fff", "#d5e0e2");
-    roundedRect(x + 55, y + 76, 75, 49, 5, index % 2 ? "#a8c9d2" : "#b4d9cf");
-    // Bedside table
-    roundedRect(x + 12, y + 79, 28, 32, 4, "#c69e79", "#aa815c");
-    roundedRect(x + 17, y + 83, 18, 7, 2, "#dec3a4");
-    // Chair
-    roundedRect(x + 14, y + 126, 28, 28, 5, "#b8c9b9", "#93aa99");
-    // Resident on bed
-    ctx.beginPath(); ctx.arc(x + 91, y + 62, 11, 0, Math.PI * 2); ctx.fillStyle = "#e7b995"; ctx.fill();
-    ctx.beginPath(); ctx.arc(x + 91, y + 58, 11, Math.PI, Math.PI * 2); ctx.fillStyle = "#8e6a50"; ctx.fill();
-    // Room number plaque
-    roundedRect(x + 65, r.side === "top" ? y + roomH - 22 : y + roomH - 22, 67, 17, 5, "#fff", "#d8e4e5");
-    ctx.fillStyle = "#3a5964"; ctx.font = "700 10px sans-serif"; ctx.textAlign = "center";
-    ctx.fillText(`ZIMMER ${r.room}`, x + 98, y + roomH - 10);
-    // Door opening toward hall
-    const doorX = x + 68;
-    if (r.side === "top") {
-      ctx.fillStyle = "#e7eeee"; ctx.fillRect(doorX, y + roomH - 3, 34, 8);
-      ctx.strokeStyle = "#b18c68"; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(doorX, y + roomH); ctx.lineTo(doorX, y + roomH - 31); ctx.lineTo(doorX + 30, y + roomH - 31); ctx.stroke();
-    } else {
-      ctx.fillStyle = "#e7eeee"; ctx.fillRect(doorX, y - 3, 34, 8);
-      ctx.strokeStyle = "#b18c68"; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(doorX, y); ctx.lineTo(doorX, y + 31); ctx.lineTo(doorX + 30, y + 31); ctx.stroke();
-    }
-    // Clickable resident badge
-    const badgeY = r.side === "top" ? y + roomH - 7 : y + 8;
-    ctx.beginPath(); ctx.arc(x + roomW - 17, badgeY, 12, 0, Math.PI * 2);
-    ctx.fillStyle = r.done.length === r.needs.length ? "#208d6b" : "#d9a15e"; ctx.fill();
-    ctx.fillStyle = "#fff"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center";
-    ctx.fillText(r.done.length === r.needs.length ? "✓" : "!", x + roomW - 17, badgeY + 4);
-    r._bounds = { x, y, w: roomW, h: roomH };
-  }
-
-  function drawHall() {
-    // Corridor base
-    const grad = ctx.createLinearGradient(0, WORLD.hallTop, 0, WORLD.hallBottom);
-    grad.addColorStop(0, "#e8eeee"); grad.addColorStop(.5, "#f5f7f5"); grad.addColorStop(1, "#e2eaea");
-    ctx.fillStyle = grad; ctx.fillRect(0, WORLD.hallTop, WORLD.w, WORLD.hallBottom - WORLD.hallTop);
-    // Floor tiles
-    ctx.strokeStyle = "#d2dede"; ctx.lineWidth = 1;
-    for (let x = 0; x <= WORLD.w; x += 60) { ctx.beginPath(); ctx.moveTo(x, WORLD.hallTop); ctx.lineTo(x, WORLD.hallBottom); ctx.stroke(); }
-    for (let y = WORLD.hallTop; y <= WORLD.hallBottom; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WORLD.w, y); ctx.stroke(); }
-    // Wall borders and handrails
-    ctx.fillStyle = "#d0dede"; ctx.fillRect(0, WORLD.hallTop - 6, WORLD.w, 7); ctx.fillRect(0, WORLD.hallBottom - 1, WORLD.w, 7);
-    ctx.fillStyle = "#b8c7c9"; ctx.fillRect(0, WORLD.hallTop + 19, WORLD.w, 3); ctx.fillRect(0, WORLD.hallBottom - 23, WORLD.w, 3);
-    // Wall lights / signs
-    for (let i = 0; i < 4; i++) {
-      const x = 105 + i * 184;
-      roundedRect(x, WORLD.hallTop + 3, 31, 10, 3, "#fff4c8", "#e1d6a8");
-      roundedRect(x + 42, WORLD.hallBottom - 14, 22, 7, 2, "#fff4c8");
-    }
-    ctx.fillStyle = "#789099"; ctx.font = "700 11px sans-serif"; ctx.textAlign = "center";
-    ctx.fillText("WOHNBEREICH A", 450, 300);
-    ctx.fillStyle = "#a0b2b5"; ctx.font = "10px sans-serif";
-    ctx.fillText("← Zimmer 101 / 103", 120, 405);
-    ctx.fillText("Zimmer 102 / 104 →", 780, 405);
-  }
-
-  function drawPlayer() {
-    // Destination marker
-    if (player.moving) {
-      ctx.beginPath(); ctx.arc(player.tx, player.ty, 11, 0, Math.PI * 2);
-      ctx.strokeStyle = "#168b85"; ctx.lineWidth = 2; ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]);
-    }
-    // Soft shadow
-    ctx.beginPath(); ctx.ellipse(player.x, player.y + 15, 14, 6, 0, 0, Math.PI * 2); ctx.fillStyle = "#183b4530"; ctx.fill();
-    // Feet
-    roundedRect(player.x - 8, player.y + 7, 6, 10, 3, "#334b58");
-    roundedRect(player.x + 2, player.y + 7, 6, 10, 3, "#334b58");
-    // Body / scrub uniform
-    roundedRect(player.x - 12, player.y - 9, 24, 22, 7, "#168f87", "#0f726d", 1);
-    // Head
-    ctx.beginPath(); ctx.arc(player.x, player.y - 17, 9, 0, Math.PI * 2); ctx.fillStyle = "#d9a27e"; ctx.fill();
-    // Hair
-    ctx.beginPath(); ctx.arc(player.x, player.y - 20, 9, Math.PI, Math.PI * 2); ctx.fillStyle = "#4e4540"; ctx.fill();
-    // Badge
-    roundedRect(player.x + 3, player.y - 5, 5, 6, 1, "#f4ffff");
-    if (player.moving) {
-      ctx.beginPath(); ctx.arc(player.x, player.y - 34, 3, 0, Math.PI * 2); ctx.fillStyle = "#168b85"; ctx.fill();
-    }
-  }
-
-  function draw() {
-    if (!ctx) return;
-    ctx.clearRect(0, 0, WORLD.w, WORLD.h);
-    ctx.fillStyle = "#dce6e6"; ctx.fillRect(0, 0, WORLD.w, WORLD.h);
-    residents.filter(r => r.side === "top").forEach((r, i) => drawRoom(r, i));
-    residents.filter(r => r.side === "bottom").forEach((r, i) => drawRoom(r, i));
-    drawHall();
-    drawPlayer();
-  }
-
-  function pointFromEvent(event) {
-    const rect = canvas.getBoundingClientRect();
+  function makeRequest(i) {
+    const person = names[i % names.length];
+    const care = careLevels[(i * 3 + 1) % careLevels.length];
     return {
-      x: (event.clientX - rect.left) / rect.width * WORLD.w,
-      y: (event.clientY - rect.top) / rect.height * WORLD.h
+      id: i + 1, firstName: person[0], lastName: person[1], age: person[2],
+      care, room: roomTypes[i % roomTypes.length],
+      note: [
+        "Wünscht sich einen ruhigen Platz im Garten.",
+        "Die Familie unterstützt den Einzug.",
+        "Möchte gern an den gemeinsamen Mahlzeiten teilnehmen.",
+        "Benötigt Unterstützung bei alltäglichen Aufgaben.",
+        "Freut sich auf Gesellschaft und Aktivitäten.",
+        "Wünscht ein helles Zimmer."
+      ][i % 6],
+      date: new Date().toLocaleDateString("de-DE"), status: "offen"
     };
   }
-
-  function setTarget(x, y) {
-    player.tx = Math.max(20, Math.min(WORLD.w - 20, x));
-    player.ty = Math.max(WORLD.hallTop + 15, Math.min(WORLD.hallBottom - 15, y));
-    player.moving = Math.hypot(player.tx - player.x, player.ty - player.y) > 5;
-    document.getElementById("movement-status").textContent = player.moving ? "Auf dem Weg ..." : "Am Ziel angekommen";
+  function createScheduledRequest() {
+    const id = Number.isInteger(state.nextId) ? state.nextId : state.requests.reduce((max, r) => Math.max(max, r.id || 0), 0) + 1;
+    const personIndex = Number.isInteger(state.nextProspectIndex) ? state.nextProspectIndex : id;
+    const request = {
+      ...makeRequest(personIndex - 1),
+      id,
+      date: `Spieltag ${Math.floor(gameMinutes / 1440) + 1}, ${String(Math.floor((gameMinutes % 1440) / 60)).padStart(2, "0")}:${String(Math.floor(gameMinutes % 60)).padStart(2, "0")}`,
+      status: "offen"
+    };
+    state.requests.push(request);
+    state.nextId = id + 1;
+    state.nextProspectIndex = personIndex + 1;
+    showToast(`Neue Bewohneranfrage: ${request.firstName} ${request.lastName} möchte einen Heimvertrag abschließen.`);
   }
 
-  function onMapTap(event) {
-    const p = pointFromEvent(event);
-    // Tap on room/resident selects that resident.
-    for (const r of residents) {
-      const b = r._bounds;
-      if (b && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) {
-        openResident(r);
-        return;
+  function processScheduledRequests() {
+    if (!Number.isFinite(state.nextRequestAt)) state.nextRequestAt = gameMinutes + REQUEST_INTERVAL_GAME_MINUTES;
+    while (gameMinutes >= state.nextRequestAt) {
+      createScheduledRequest();
+      state.nextRequestAt += REQUEST_INTERVAL_GAME_MINUTES;
+    }
+  }
+
+  // Vier Wohnbereiche: je 25 nutzbare Zimmer zum Start, 30 nach dem ersten Upgrade; weitere Upgrades ergänzen je 5 Zimmer pro Etage.
+  function floorName(floor) { return ["", "Wohnbereich A", "Wohnbereich B", "Wohnbereich C", "Wohnbereich D"][floor] || `Wohnbereich ${floor}`; }
+  function roomNumberFor(floor, index) { return floor * 100 + index; }
+  function floorRoomCapacity() { return 25 + (state.upgrades || 0) * 5; }
+  function allRoomSlots() {
+    const slots = [];
+    for (let floor = 1; floor <= 4; floor++) {
+      for (let index = 1; index <= 40; index++) {
+        slots.push({ floor, roomNumber: roomNumberFor(floor, index), active: index <= floorRoomCapacity(), extension: index > 30 });
       }
     }
-    setTarget(p.x, p.y);
+    return slots;
   }
-
-  function openResident(r) {
-    activeResident = r;
-    document.getElementById("modal-room").textContent = `ZIMMER ${r.room}`;
-    document.getElementById("modal-title").textContent = r.name;
-    document.getElementById("modal-subtitle").textContent = `Bewohner${r.avatar === "👴" ? "" : "in"} · ${r.age} Jahre`;
-    document.getElementById("modal-avatar").textContent = r.avatar;
-    document.getElementById("modal-mood").textContent = r.done.length === r.needs.length ? "Alle Aufgaben erledigt – gut versorgt" : r.mood;
-    const options = document.getElementById("care-options");
-    options.innerHTML = "";
-    careTypes.forEach(type => {
-      const complete = r.done.includes(type.id);
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = `care-button${complete ? " completed" : ""}`;
-      button.innerHTML = `<span class="care-icon">${complete ? "✓" : type.icon}</span><span><strong>${type.label}</strong><small>${complete ? "Erledigt" : type.detail}</small></span>`;
-      button.disabled = complete;
-      button.addEventListener("click", () => startCare(r, type));
-      options.appendChild(button);
+  function getAvailableRoomAssignment() {
+    const occupied = new Set(state.residents.map(r => Number(r.roomNumber)).filter(Number.isFinite));
+    const counts = [0, 1, 2, 3, 4].map(floor => floor === 0 ? 0 : state.residents.filter(r => Number(r.floor) === floor).length);
+    const floors = [1, 2, 3, 4].sort((a, b) => counts[a] - counts[b] || a - b);
+    for (const floor of floors) {
+      const slot = allRoomSlots().find(item => item.floor === floor && item.active && !occupied.has(item.roomNumber));
+      if (slot) return slot;
+    }
+    return null;
+  }
+  function migrateResidentRooms() {
+    if (!Array.isArray(state.residents)) state.residents = [];
+    const slots = allRoomSlots();
+    const used = new Set(state.residents.map(r => Number(r.roomNumber)).filter(Number.isFinite));
+    const counts = [0, 0, 0, 0, 0];
+    state.residents.forEach(resident => {
+      if (Number.isFinite(Number(resident.roomNumber)) && resident.floor) { counts[resident.floor] = (counts[resident.floor] || 0) + 1; return; }
+      const floors = [1, 2, 3, 4].sort((a, b) => counts[a] - counts[b] || a - b);
+      let slot = null;
+      for (const floor of floors) { slot = slots.find(item => item.floor === floor && item.active && !used.has(item.roomNumber)); if (slot) break; }
+      if (!slot) return;
+      resident.roomNumber = slot.roomNumber;
+      resident.floor = slot.floor;
+      used.add(slot.roomNumber);
+      counts[slot.floor]++;
     });
-    modal.classList.remove("hidden");
+    state.contracts.forEach(contract => {
+      const resident = state.residents.find(r => r.contractNo === contract.contractNo);
+      if (resident) { contract.roomNumber = resident.roomNumber; contract.floor = resident.floor; }
+    });
   }
-
-  function startCare(r, type) {
-    modal.classList.add("hidden");
-    const b = r._bounds;
-    const targetX = b.x + b.w / 2;
-    const targetY = r.side === "top" ? WORLD.hallTop + 45 : WORLD.hallBottom - 45;
-    setTarget(targetX, targetY);
-    const task = { resident: r, type, targetX, targetY, started: false };
-    const check = () => {
-      if (Math.hypot(player.x - task.targetX, player.y - task.targetY) < 14) {
-        player.moving = false;
-        r.done.push(type.id);
-        gameMinutes += 4;
-        saveGame();
-        updateUI();
-        draw();
-        showToast(`${type.label} bei ${r.name} erledigt.`);
+  function roomOccupant(roomNumber) { return state.residents.find(r => Number(r.roomNumber) === roomNumber); }
+  function renderFloorPlan() {
+    const host = $("floorPlan");
+    if (!host) return;
+    document.querySelectorAll("[data-floor]").forEach(btn => btn.classList.toggle("active", Number(btn.dataset.floor) === selectedFloor));
+    const floorSlots = allRoomSlots().filter(slot => slot.floor === selectedFloor);
+    const residents = state.residents.filter(r => Number(r.floor) === selectedFloor);
+    const staff = state.staff.filter(person => Number(person.floor || 1) === selectedFloor);
+    const columns = 3;
+    const roomRows = [];
+    for (let i = 0; i < floorSlots.length; i += columns) {
+      roomRows.push(`<div class="room-grid">${floorSlots.slice(i, i + columns).map(slot => {
+        const resident = roomOccupant(slot.roomNumber);
+        const locked = !slot.active;
+        return `<div class="room-slot ${resident ? "occupied" : locked ? "locked" : "vacant"}" data-room-number="${slot.roomNumber}" title="${resident ? escapeHtml(resident.firstName + " " + resident.lastName) : locked ? "Wird durch Gebäude-Upgrades freigeschaltet" : "Freies Zimmer"}">
+          <span class="room-number">Zimmer ${slot.roomNumber}</span>
+          <span class="room-icon">${resident ? "●" : locked ? "🔒" : "○"}</span>
+          <span class="room-resident">${resident ? escapeHtml(resident.firstName + " " + resident.lastName) : locked ? "Gesperrt" : "Frei"}</span>
+          <span class="room-door" aria-hidden="true"></span>
+        </div>`;
+      }).join("")}</div>${i + columns < floorSlots.length ? `<div class="room-walkway" data-walkway><span>Flur · freie Laufzone</span></div>` : ""}`);
+    }
+    $("floorTitle").textContent = `${selectedFloor}. Etage · ${floorName(selectedFloor)}`;
+    $("floorOccupancy").textContent = `${residents.length} Bewohner · ${floorSlots.filter(slot => slot.active).length} Zimmer · ${staff.length} Pflegekräfte`;
+    host.innerHTML = `
+      <div class="floor-plan-corridor" data-walkway><span>Hauptflur <small>· Zugang zu allen Zimmern</small></span></div>
+      <div class="floor-rooms">${roomRows.join("")}</div>
+      <div class="station-room" data-station><div class="station-sign">✚</div><div><strong>Stationszimmer</strong><small>Pflegeplanung · Dokumentation · Dienststützpunkt</small><span class="station-status">${staff.filter(person => !person.task || person.task === "idle").length} Pflegekräfte im Bereitschaftsraum</span></div></div>
+      <div class="common-area"><span class="common-icon">☕</span><div><strong>Aufenthaltsraum</strong><small>Gemeinsame Mahlzeiten, Gespräche und betreute Aktivitäten</small></div></div>
+      <div class="walker-layer" aria-label="Bewohner und Pflegekräfte, die sich auf dieser Etage bewegen">${residents.map((resident, i) => `<span class="walker resident-walker" data-walker-id="${escapeHtml(resident.id)}" title="Bewohner: ${escapeHtml(resident.firstName + " " + resident.lastName)}" style="left:${8 + (i * 17 % 84)}%;top:3%">${escapeHtml(initials(resident))}</span>`).join("")}${staff.map((person, i) => `<span class="walker staff-walker ${!person.task || person.task === "idle" ? "staff-idle" : "staff-working"}" data-staff-walker-id="${escapeHtml(person.id)}" title="Pflegekraft: ${escapeHtml(person.firstName + " " + person.lastName)}" style="left:${15 + (i * 21 % 70)}%;top:7%">${!person.task || person.task === "idle" ? "✚" : "＋"}</span>`).join("")}</div>`;
+    updateWalkers();
+  }
+  function updateWalkers() {
+    const page = $("page-floorplan");
+    const host = $("floorPlan");
+    const layer = host && host.querySelector(".walker-layer");
+    if (!page || page.classList.contains("hidden") || !layer) return;
+    const layerRect = layer.getBoundingClientRect();
+    const walkways = [...host.querySelectorAll("[data-walkway]")];
+    const roomTargets = [...host.querySelectorAll(".room-slot.occupied")];
+    const station = host.querySelector("[data-station]");
+    const commonArea = host.querySelector(".common-area");
+    const moveTo = (walker, target, biasX = null) => {
+      if (!target) return;
+      const rect = target.getBoundingClientRect();
+      const x = biasX == null ? rect.left - layerRect.left + Math.random() * Math.max(1, rect.width - 24) : rect.left - layerRect.left + rect.width * biasX;
+      const y = rect.top - layerRect.top + Math.max(2, rect.height * (0.35 + Math.random() * 0.3));
+      walker.style.left = `${Math.max(0, Math.min(layerRect.width - 24, x))}px`;
+      walker.style.top = `${Math.max(0, Math.min(layerRect.height - 24, y))}px`;
+      walker.classList.toggle("walking-left", Math.random() < 0.5);
+    };
+    layer.querySelectorAll(".resident-walker").forEach(walker => {
+      const target = Math.random() < .25 && commonArea ? commonArea : walkways[Math.floor(Math.random() * Math.max(1, walkways.length))];
+      moveTo(walker, target);
+    });
+    layer.querySelectorAll(".staff-walker").forEach(walker => {
+      const person = state.staff.find(item => String(item.id) === walker.dataset.staffWalkerId);
+      if (!person || !person.task || person.task === "idle") { moveTo(walker, station); return; }
+      if (person.task === "feed" || person.task === "accompany") {
+        moveTo(walker, commonArea || walkways[0]);
         return;
       }
-      requestAnimationFrame(check);
-    };
-    requestAnimationFrame(check);
+      const assigned = state.residents.find(r => String(r.id) === String(person.targetResidentId) && Number(r.floor) === selectedFloor);
+      const target = assigned && host.querySelector(`[data-room-number="${Number(assigned.roomNumber)}"]`);
+      moveTo(walker, target || roomTargets[Math.floor(Math.random() * Math.max(1, roomTargets.length))] || walkways[0], .5);
+    });
+  }
+  function refreshFloorIfVisible() {
+    const page = $("page-floorplan");
+    if (page && !page.classList.contains("hidden")) renderFloorPlan();
   }
 
-  function updateUI() {
-    const total = residents.reduce((sum, r) => sum + r.needs.length, 0);
-    const done = residents.reduce((sum, r) => sum + r.done.length, 0);
-    document.getElementById("resident-count").textContent = residents.length;
-    document.getElementById("done-count").textContent = `${done} / ${total}`;
-    document.getElementById("task-counter").textContent = `${total - done} offen`;
-    document.getElementById("wellbeing").textContent = done === total ? "Sehr gut" : done >= 6 ? "Gut" : "Stabil";
-    document.getElementById("clock").textContent = `${String(Math.floor(gameMinutes / 60) % 24).padStart(2,"0")}:${String(gameMinutes % 60).padStart(2,"0")}`;
-    const list = document.getElementById("task-list");
-    list.innerHTML = "";
-    residents.forEach(r => careTypes.forEach(type => {
-      const complete = r.done.includes(type.id);
-      const item = document.createElement("div");
-      item.className = `task-item${complete ? " done" : ""}`;
-      item.innerHTML = `<span class="task-check">${complete ? "✓" : "○"}</span><span class="task-copy"><strong>${type.label} · ${r.name}</strong><span>Zimmer ${r.room} · ${complete ? "Erledigt" : "Noch offen"}</span></span>`;
-      item.addEventListener("click", () => openResident(r));
-      item.style.cursor = "pointer";
-      list.appendChild(item);
-    }));
+  function initials(person) { return (person.firstName[0] + person.lastName[0]).toUpperCase(); }
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
   }
-
+  function openPage(page) {
+    document.querySelectorAll(".page").forEach(el => el.classList.toggle("hidden", el.id !== `page-${page}`));
+    document.querySelectorAll(".nav-btn").forEach(el => el.classList.toggle("active", el.dataset.page === page));
+    if (page === "contracts") renderContracts();
+    if (page === "residents") renderResidents();
+    if (page === "finances") renderFinances();
+    if (page === "upgrades") renderUpgrades();
+    if (page === "floorplan") renderFloorPlan();
+    if (page === "staff") renderStaff();
+    window.scrollTo({top: 0, behavior: "smooth"});
+  }
+  function render() {
+    const count = state.residents.length;
+    const openCount = state.requests.filter(r => r.status === "offen").length;
+    const capacity = BASE_ROOMS + (state.upgrades || 0) * ROOMS_PER_UPGRADE;
+    $("residentCount").textContent = `${count} / ${capacity}`;
+    $("requestCount").textContent = openCount;
+    $("navRequestCount").textContent = openCount;
+    $("occupiedMetric").textContent = count;
+    $("freeMetric").textContent = capacity - count;
+    $("contractMetric").textContent = state.contracts.length;
+    $("requestsTabCount").textContent = openCount;
+    $("signedTabCount").textContent = state.contracts.length;
+    $("residentTotalLabel").textContent = `${count} Bewohner`;
+    $("overviewNotice").textContent = count >= capacity
+      ? `Alle ${capacity} Plätze sind belegt. Kaufe ein Gebäude-Upgrade, um weitere Zimmer zu schaffen.`
+      : openCount ? `Du hast ${openCount} offene Zimmeranfrage${openCount === 1 ? "" : "n"}. Prüfe die Angaben und schließe bei passender Anfrage einen Heimvertrag ab.`
+      : "Aktuell sind keine offenen Anfragen vorhanden. Neue Zimmeranfragen werden im Spiel nach und nach eingehen.";
+    renderContracts();
+    renderResidents();
+    renderFinances();
+    renderUpgrades();
+    renderStaff();
+    updateClockDisplay();
+    saveState();
+  }
+  function emptyState(icon, title, body) {
+    return `<div class="empty-state"><div class="empty-icon">${icon}</div><b>${title}</b><p>${body}</p></div>`;
+  }
+  function requestCard(r) {
+    return `<article class="request-card">
+      <div class="avatar">${escapeHtml(initials(r))}</div>
+      <div class="person-main"><h3>${escapeHtml(r.firstName)} ${escapeHtml(r.lastName)}</h3>
+        <p>${r.age} Jahre alt · Anfrage vom ${escapeHtml(r.date)}</p>
+        <div class="tag-row"><span class="tag">${escapeHtml(r.room)}</span><span class="tag">${escapeHtml(r.care)}</span></div>
+        <p style="margin-top:8px">${escapeHtml(r.note)}</p>
+      </div>
+      <div class="request-actions"><button class="primary-btn" data-contract="${r.id}">Vertrag prüfen</button><button class="secondary-btn" data-decline="${r.id}">Ablehnen</button></div>
+    </article>`;
+  }
+  function residentCard(r) {
+    return `<article class="resident-card"><div class="avatar">${escapeHtml(initials(r))}</div>
+      <div class="person-main"><h3>${escapeHtml(r.firstName)} ${escapeHtml(r.lastName)}</h3>
+      <p>${r.age} Jahre · Eingezogen am ${escapeHtml(r.moveInDate || "—")}</p>
+      <div class="tag-row"><span class="tag">Zimmer ${escapeHtml(r.roomNumber || "—")}</span><span class="tag">${escapeHtml(r.floor ? floorName(r.floor) : r.room)}</span><span class="tag">${escapeHtml(r.care)}</span><span class="tag">Vertrag #${r.contractNo}</span></div></div>
+      <span class="resident-state">Aufgenommen</span></article>`;
+  }
+  function renderContracts() {
+    const requests = state.requests.filter(r => r.status === "offen");
+    const signed = state.contracts.slice().reverse();
+    $("requestList").classList.toggle("hidden", contractTab !== "requests");
+    $("signedList").classList.toggle("hidden", contractTab !== "signed");
+    $("requestList").innerHTML = requests.length ? requests.map(requestCard).join("") : emptyState("✓", "Keine offenen Anfragen", "Alle aktuellen Zimmeranfragen wurden bearbeitet.");
+    $("signedList").innerHTML = signed.length ? signed.map(c => `<article class="resident-card"><div class="avatar">✓</div><div class="person-main"><h3>${escapeHtml(c.firstName)} ${escapeHtml(c.lastName)}</h3><p>Heimvertrag #${c.contractNo} · abgeschlossen am ${escapeHtml(c.signedAt)}</p><div class="tag-row"><span class="tag">Zimmer ${escapeHtml(c.roomNumber || "—")}</span><span class="tag">${escapeHtml(c.floor ? floorName(c.floor) : c.room)}</span><span class="tag">${escapeHtml(c.care)}</span></div></div><span class="resident-state">Unterschrieben</span></article>`).join("") : emptyState("▤", "Noch keine Verträge", "Abgeschlossene Heimverträge erscheinen hier.");
+  }
+  function renderResidents() {
+    const q = ($("residentSearch").value || "").trim().toLocaleLowerCase("de-DE");
+    const residents = state.residents.filter(r => `${r.firstName} ${r.lastName}`.toLocaleLowerCase("de-DE").includes(q));
+    $("residentList").innerHTML = residents.length ? residents.map(residentCard).join("") : emptyState("⌕", q ? "Niemand gefunden" : "Noch keine Bewohner", q ? "Versuche einen anderen Namen." : "Bewohner ziehen nach Abschluss eines Heimvertrags ein.");
+  }
   function showToast(message) {
-    toast.textContent = message;
-    toast.classList.add("show");
+    $("toast").textContent = message;
+    $("toast").classList.add("show");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove("show"), 2500);
+    toastTimer = setTimeout(() => $("toast").classList.remove("show"), 2800);
   }
-
-  function frame(timestamp) {
-    if (!lastFrame) lastFrame = timestamp;
-    const dt = Math.min((timestamp - lastFrame) / 1000, .04);
-    lastFrame = timestamp;
-    if (player.moving) {
-      const dx = player.tx - player.x, dy = player.ty - player.y;
-      const dist = Math.hypot(dx, dy);
-      const step = player.speed * dt;
-      if (dist <= step + 1) {
-        player.x = player.tx; player.y = player.ty; player.moving = false;
-        document.getElementById("movement-status").textContent = "Am Ziel angekommen";
-        saveGame();
-      } else {
-        player.x += dx / dist * step;
-        player.y += dy / dist * step;
-      }
-      draw();
+  function openContract(id) {
+    const r = state.requests.find(item => item.id === id && item.status === "offen");
+    if (!r) return;
+    if (state.residents.length >= getCapacity()) { showToast("Das Heim hat aktuell keine freien Zimmer mehr. Kaufe ein Gebäude-Upgrade für zusätzliche Plätze."); return; }
+    activeRequestId = id;
+    const roomPreview = getAvailableRoomAssignment();
+    $("modalError").classList.add("hidden");
+    $("contractDocument").innerHTML = `
+      <div class="doc-title">Heimvertrag</div><div class="doc-subtitle">Altenheim Simulator · Laurentiushaus</div>
+      <div class="doc-section"><h4>1. Vertragsparteien</h4><div class="doc-grid">
+        <div class="doc-field"><span>Heimleitung / Vertragspartner</span><strong>Du – Heimleitung Laurentiushaus</strong></div>
+        <div class="doc-field"><span>Bewohner / Vertragspartner</span><strong>${escapeHtml(r.firstName)} ${escapeHtml(r.lastName)}</strong></div>
+      </div></div>
+      <div class="doc-section"><h4>2. Bewohnerdaten</h4><div class="doc-grid">
+        <div class="doc-field"><span>Alter</span><strong>${r.age} Jahre</strong></div>
+        <div class="doc-field"><span>Zimmertyp</span><strong>${escapeHtml(r.room)}</strong></div>
+        <div class="doc-field"><span>Zimmernummer / Etage</span><strong>${roomPreview ? `${roomPreview.roomNumber} · ${roomPreview.floor}. Etage` : "Kein freies Zimmer"}</strong></div>
+        <div class="doc-field"><span>Pflegebedarf</span><strong>${escapeHtml(r.care)}</strong></div>
+        <div class="doc-field"><span>Monatlicher Beitrag</span><strong>${formatEuro(MONTHLY_FEE)}</strong></div>
+        <div class="doc-field"><span>Aufnahmedatum</span><strong>${escapeHtml(new Date().toLocaleDateString("de-DE"))}</strong></div>
+      </div></div>
+      <div class="doc-section"><h4>3. Vereinbarung</h4><p class="contract-copy">Die Heimleitung und der oben genannte Bewohner vereinbaren im Rahmen dieser Simulation die Aufnahme in das Laurentiushaus. Das Heim stellt ein Zimmer entsprechend der Anfrage bereit. Die Betreuung richtet sich nach dem im Spiel hinterlegten Pflegebedarf. Mit Bestätigung dieses Dialogs gilt der Vertrag im Spiel als abgeschlossen und der Bewohner wird in das Heim aufgenommen.</p></div>
+      <div class="signature-row"><div class="signature">Unterschrift Heimleitung (Spiel)</div><div class="signature">Unterschrift Bewohner (Spiel)</div></div>`;
+    $("contractModal").classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+  }
+  function closeModal() {
+    $("contractModal").classList.add("hidden");
+    document.body.style.overflow = "";
+    activeRequestId = null;
+  }
+  function signContract() {
+    if (activeRequestId == null) return;
+    if (state.residents.length >= getCapacity()) {
+      $("modalError").textContent = "Das Heim hat aktuell keine freien Zimmer mehr. Kaufe ein Gebäude-Upgrade für zusätzliche Plätze.";
+      $("modalError").classList.remove("hidden"); return;
     }
-    requestAnimationFrame(frame);
+    const index = state.requests.findIndex(r => r.id === activeRequestId && r.status === "offen");
+    if (index < 0) { closeModal(); return; }
+    const r = state.requests[index];
+    const roomAssignment = getAvailableRoomAssignment();
+    if (!roomAssignment) { showToast("Es ist kein Zimmer mehr frei. Bitte erweitere das Gebäude."); return; }
+    const contractNo = state.contracts.length + 1;
+    const signedAt = new Date().toLocaleDateString("de-DE");
+    const resident = {...r, contractNo, moveInDate: signedAt, status: "aufgenommen", monthlyFee: MONTHLY_FEE, monthlyCost: 0, roomType: r.room, roomNumber: roomAssignment.roomNumber, floor: roomAssignment.floor};
+    const contract = {...resident, signedAt, monthlyFee: MONTHLY_FEE, parties: ["Heimleitung Laurentiushaus", `${r.firstName} ${r.lastName}`]};
+    state.contracts.push(contract);
+    state.residents.push(resident);
+    state.requests[index].status = "angenommen";
+    closeModal();
+    render();
+    refreshFloorIfVisible();
+    showToast(`Heimvertrag abgeschlossen – ${r.firstName} ${r.lastName} ist eingezogen.`);
+  }
+  function declineRequest(id) {
+    const r = state.requests.find(item => item.id === id && item.status === "offen");
+    if (!r) return;
+    r.status = "abgelehnt";
+    render();
+    showToast(`Anfrage von ${r.firstName} ${r.lastName} abgelehnt.`);
   }
 
-  document.getElementById("close-modal").addEventListener("click", () => modal.classList.add("hidden"));
-  modal.addEventListener("click", e => { if (e.target === modal) modal.classList.add("hidden"); });
-  document.getElementById("reset-button").addEventListener("click", () => {
-    if (!confirm("Möchtest du den Dienst wirklich neu starten? Alle erledigten Aufgaben werden zurückgesetzt.")) return;
-    residents.forEach(r => r.done = []);
-    player.x = player.tx = 450; player.y = player.ty = 305; player.moving = false; gameMinutes = 420;
-    saveGame(); updateUI(); draw(); showToast("Neuer Frühdienst gestartet.");
-  });
-  canvas.addEventListener("pointerup", onMapTap);
-  window.addEventListener("resize", resizeCanvas);
 
-  loadSave();
-  resizeCanvas();
-  updateUI();
-  requestAnimationFrame(frame);
+  function getCapacity() { return BASE_ROOMS + (state.upgrades || 0) * ROOMS_PER_UPGRADE; }
+  function formatEuro(amount) {
+    return new Intl.NumberFormat("de-DE", {style:"currency", currency:"EUR", maximumFractionDigits:0}).format(amount);
+  }
+  function renderFinances() {
+    const income = state.residents.reduce((sum, r) => sum + (Number(r.monthlyFee) || MONTHLY_FEE), 0);
+    const residentCosts = state.residents.reduce((sum, r) => sum + (Number(r.monthlyCost) || 0), 0);
+    const staffCosts = state.staff.reduce((sum, person) => sum + (Number(person.monthlySalary) || 0), 0);
+    const costs = residentCosts + staffCosts;
+    $("monthlyIncome").textContent = formatEuro(income);
+    $("monthlyCosts").textContent = formatEuro(costs);
+    $("monthlyBalance").textContent = formatEuro(income - costs);
+    const residentRows = state.residents.map(r => `<div class="finance-row"><div><strong>${escapeHtml(r.firstName)} ${escapeHtml(r.lastName)}</strong><small>Monatsbeitrag · Heimvertrag #${r.contractNo}</small></div><div class="finance-amount income">+${formatEuro(Number(r.monthlyFee) || MONTHLY_FEE)}</div></div>`);
+    const staffRows = state.staff.map(person => `<div class="finance-row"><div><strong>${escapeHtml(person.firstName)} ${escapeHtml(person.lastName)} · Pflege</strong><small>Monatsgehalt · Arbeitsvertrag #${person.contractNo}</small></div><div class="finance-amount expense">−${formatEuro(Number(person.monthlySalary) || 0)}</div></div>`);
+    $("financeList").innerHTML = residentRows.concat(staffRows).join("") || emptyState("€", "Noch keine Buchungen", "Bewohnerbeiträge und Personalkosten erscheinen nach Vertragsabschlüssen hier.");
+  }
+  function renderUpgrades() {
+    const count = state.upgrades || 0;
+    $("capacityDisplay").textContent = `${getCapacity()} Zimmer`;
+    $("upgradeProgress").textContent = `${count} von ${MAX_UPGRADES} Upgrades gekauft · maximal ${BASE_ROOMS + MAX_UPGRADES * ROOMS_PER_UPGRADE} Zimmer`;
+    $("upgradeList").innerHTML = upgradeDefinitions.map(u => {
+      const bought = count >= u.id, locked = !bought && u.id > count + 1;
+      return `<article class="upgrade-card"><div class="upgrade-icon">${u.icon}</div><div class="upgrade-info"><h3>${u.id}. ${escapeHtml(u.name)}</h3><p>${escapeHtml(u.description)} <b>+${ROOMS_PER_UPGRADE} Zimmer</b></p></div><div class="upgrade-action">${bought ? '<span class="purchased-tag">✓ Gekauft</span>' : `<span class="upgrade-price">${formatEuro(u.cost)}</span><button class="${locked ? 'secondary-btn' : 'primary-btn'}" data-upgrade="${u.id}" ${locked ? 'disabled' : ''}>${locked ? 'Gesperrt' : 'Ausbauen'}</button>`}</div></article>`;
+    }).join("");
+  }
+  function buyUpgrade(id) {
+    const u = upgradeDefinitions.find(item => item.id === id);
+    if (!u || id !== (state.upgrades || 0) + 1) return;
+    if ((state.upgrades || 0) >= MAX_UPGRADES) { showToast("Alle Gebäude-Upgrades sind bereits gekauft."); return; }
+    if (state.cash < u.cost) { showToast(`Nicht genug Spielgeld. Benötigt werden ${formatEuro(u.cost)}.`); return; }
+    state.cash -= u.cost;
+    state.upgrades = (state.upgrades || 0) + 1;
+    render();
+    refreshFloorIfVisible();
+    showToast(`${u.name}: 20 zusätzliche Zimmer freigeschaltet.`);
+  }
+  function renderStaff() {
+    const candidatesHost = $("staffCandidateList"), staffHost = $("staffList");
+    if (!candidatesHost || !staffHost) return;
+    const hiredIds = new Set(state.staff.map(person => person.candidateId));
+    const available = staffCandidates.filter(person => !hiredIds.has(person.id));
+    $("staffCount").textContent = state.staff.length;
+    $("staffCosts").textContent = formatEuro(state.staff.reduce((sum, person) => sum + (Number(person.monthlySalary) || 0), 0));
+    $("staffCandidatesCount").textContent = available.length;
+    candidatesHost.innerHTML = available.length ? available.map(person => `<article class="request-card staff-candidate"><div class="avatar">${escapeHtml(initials(person))}</div><div class="person-main"><h3>${escapeHtml(person.firstName)} ${escapeHtml(person.lastName)}</h3><p>${escapeHtml(person.role)} · verfügbar für einen Arbeitsvertrag</p><div class="tag-row"><span class="tag">Gehalt: 900–1.100 € / Monat</span><span class="tag">Einsatz in allen Wohnbereichen</span></div></div><div class="request-actions"><button class="primary-btn" data-staff-contract="${person.id}">Arbeitsvertrag</button></div></article>`).join("") : emptyState("✓", "Alle Bewerber eingestellt", "Aktuell stehen keine weiteren Bewerber auf der Liste.");
+    staffHost.innerHTML = state.staff.length ? state.staff.map(person => {
+      const task = person.task || "idle";
+      const targetOptions = state.residents.map(r => `<option value="${escapeHtml(r.id)}" ${String(person.targetResidentId) === String(r.id) ? "selected" : ""}>${escapeHtml(r.firstName)} ${escapeHtml(r.lastName)} · Zi. ${r.roomNumber}</option>`).join("");
+      return `<article class="resident-card staff-employee"><div class="avatar staff-avatar">✚</div><div class="person-main"><h3>${escapeHtml(person.firstName)} ${escapeHtml(person.lastName)}</h3><p>${escapeHtml(person.role || "Pflegefachkraft")} · Arbeitsvertrag #${person.contractNo}</p><div class="tag-row"><span class="tag">${formatEuro(person.monthlySalary)} / Monat</span><span class="tag">${escapeHtml(floorName(Number(person.floor) || 1))}</span><span class="tag">Seit ${escapeHtml(person.hiredAt)}</span></div><div class="staff-task-controls"><label>Tätigkeit <select data-staff-task="${escapeHtml(person.id)}"><option value="idle" ${task==="idle"?"selected":""}>Bereitschaft im Stationszimmer</option><option value="care" ${task==="care"?"selected":""}>Pflege / Bewohner versorgen</option><option value="feed" ${task==="feed"?"selected":""}>Essen eingeben</option><option value="accompany" ${task==="accompany"?"selected":""}>Bewohner betreuen / begleiten</option></select></label>${task==="care" ? `<label>Bewohner <select data-staff-target="${escapeHtml(person.id)}"><option value="">Automatisch auswählen</option>${targetOptions}</select></label>` : ""}<p class="task-status">${task==="idle"?"Wartet im Stationszimmer – keine aktive Aufgabe.":`Aktiv: ${{care:"Pflege / Bewohner versorgen",feed:"Essen eingeben",accompany:"Bewohner betreuen / begleiten"}[task] || "Aufgabe"} · läuft bis zum Abbruch.`}</p></div></div><span class="resident-state">${task==="idle"?"Bereit":"Im Dienst"}</span></article>`;
+    }).join("") : emptyState("✚", "Noch kein Pflegepersonal", "Stelle deine erste Pflegekraft mit einem Arbeitsvertrag ein.");
+  }
+  function openStaffContract(candidateId) {
+    const person = staffCandidates.find(item => item.id === candidateId);
+    if (!person || state.staff.some(item => item.candidateId === candidateId)) return;
+    activeStaffId = candidateId;
+    const salary = 900 + Math.floor(Math.random() * 201);
+    $("staffContractDocument").dataset.salary = String(salary);
+    $("staffContractDocument").innerHTML = `<div class="doc-title">Arbeitsvertrag – Pflege</div><div class="doc-subtitle">Altenheim Simulator · Laurentiushaus</div><div class="doc-section"><h4>1. Vertragsparteien</h4><div class="doc-grid"><div class="doc-field"><span>Arbeitgeber</span><strong>Laurentiushaus</strong></div><div class="doc-field"><span>Mitarbeiter</span><strong>${escapeHtml(person.firstName)} ${escapeHtml(person.lastName)}</strong></div></div></div><div class="doc-section"><h4>2. Beschäftigung</h4><div class="doc-grid"><div class="doc-field"><span>Position</span><strong>Pflegefachkraft</strong></div><div class="doc-field"><span>Monatliches Gehalt</span><strong>${formatEuro(salary)}</strong></div><div class="doc-field"><span>Einsatzort</span><strong>Wohnbereiche A–D</strong></div><div class="doc-field"><span>Beginn</span><strong>${escapeHtml(new Date().toLocaleDateString("de-DE"))}</strong></div></div></div><div class="doc-section"><h4>3. Vereinbarung</h4><p class="contract-copy">Die Pflegekraft wird zur Betreuung und Unterstützung der Bewohner im Laurentiushaus eingestellt. Das vereinbarte Monatsgehalt beträgt ${formatEuro(salary)}. Die Personalkosten werden in der Finanzübersicht monatlich berücksichtigt. Die Pflegekraft kann sich in den Wohnbereichen bewegen und Bewohnerzimmer aufsuchen.</p></div><div class="signature-row"><div class="signature">Unterschrift Heimleitung (Spiel)</div><div class="signature">Unterschrift Mitarbeiter (Spiel)</div></div>`;
+    $("staffContractModal").classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+  }
+  function closeStaffModal() {
+    $("staffContractModal").classList.add("hidden");
+    document.body.style.overflow = "";
+    activeStaffId = null;
+  }
+  function signStaffContract() {
+    if (!activeStaffId) return;
+    const candidate = staffCandidates.find(item => item.id === activeStaffId);
+    if (!candidate || state.staff.some(item => item.candidateId === activeStaffId)) { closeStaffModal(); return; }
+    const salary = Number($("staffContractDocument").dataset.salary) || 1000;
+    const floorCounts = [1, 2, 3, 4].map(floor => ({floor, count: state.staff.filter(person => Number(person.floor) === floor).length})).sort((a,b) => a.count-b.count || a.floor-b.floor);
+    const contractNo = state.staffContracts.length + 1;
+    const employee = {...candidate, id:candidate.id, candidateId:candidate.id, contractNo, hiredAt:new Date().toLocaleDateString("de-DE"), monthlySalary:salary, floor:floorCounts[0].floor, task:"idle", targetResidentId:null};
+    state.staff.push(employee);
+    state.staffContracts.push({...employee, signedAt:employee.hiredAt});
+    closeStaffModal();
+    render();
+    refreshFloorIfVisible();
+    showToast(`Arbeitsvertrag unterschrieben: ${candidate.firstName} ${candidate.lastName} (${formatEuro(salary)} / Monat).`);
+  }
+
+  function updateClockDisplay() {
+    const total = Math.floor(gameMinutes), day = Math.floor(total / 1440), minuteOfDay = total % 1440;
+    const date = new Date(Date.UTC(2027, 0, 1 + day));
+    const dateText = date.toLocaleDateString("de-DE", {timeZone:"UTC"});
+    const hh = String(Math.floor(minuteOfDay / 60)).padStart(2,"0");
+    const mm = String(minuteOfDay % 60).padStart(2,"0");
+    const stamp = `${dateText} ${hh}:${mm}`;
+    if ($("gameClock")) $("gameClock").textContent = stamp;
+    if ($("overviewClock")) $("overviewClock").textContent = stamp;
+  }
+  function setSpeed(speed) {
+    gameSpeed = speed;
+    document.querySelectorAll(".speed-btn").forEach(btn => btn.classList.toggle("active", Number(btn.dataset.speed) === speed));
+    showToast(`Spielgeschwindigkeit ×${speed}`);
+  }
+  function gameClockTick() {
+    const now = Date.now(), elapsedMs = Math.min(now - lastRealTime, 5000);
+    lastRealTime = now;
+    gameMinutes += (elapsedMs / 60000) * 60 * gameSpeed;
+    state.gameMinutes = gameMinutes;
+    processScheduledRequests();
+    updateClockDisplay();
+    render();
+  }
+
+  document.querySelectorAll(".nav-btn").forEach(btn => btn.addEventListener("click", () => openPage(btn.dataset.page)));
+  document.querySelectorAll("[data-goto]").forEach(btn => btn.addEventListener("click", () => openPage(btn.dataset.goto)));
+  document.querySelectorAll("[data-contract-tab]").forEach(btn => btn.addEventListener("click", () => {
+    contractTab = btn.dataset.contractTab;
+    document.querySelectorAll("[data-contract-tab]").forEach(b => b.classList.toggle("active", b === btn));
+    renderContracts();
+  }));
+  document.addEventListener("click", e => {
+    const contractBtn = e.target.closest("[data-contract]");
+    const declineBtn = e.target.closest("[data-decline]");
+    if (contractBtn) openContract(Number(contractBtn.dataset.contract));
+    if (declineBtn) declineRequest(Number(declineBtn.dataset.decline));
+    const upgradeBtn = e.target.closest("[data-upgrade]");
+    if (upgradeBtn) buyUpgrade(Number(upgradeBtn.dataset.upgrade));
+    const staffBtn = e.target.closest("[data-staff-contract]");
+    if (staffBtn) openStaffContract(staffBtn.dataset.staffContract);
+    if (e.target.closest("[data-close-modal]")) closeModal();
+    if (e.target.closest("[data-close-staff-modal]")) closeStaffModal();
+  });
+  document.addEventListener("change", e => {
+    const taskSelect = e.target.closest("[data-staff-task]");
+    if (taskSelect) {
+      const person = state.staff.find(item => String(item.id) === taskSelect.dataset.staffTask);
+      if (person) {
+        person.task = taskSelect.value;
+        if (person.task === "care" && !person.targetResidentId) person.targetResidentId = state.residents.find(r => Number(r.floor) === Number(person.floor))?.id || state.residents[0]?.id || null;
+        render();
+        refreshFloorIfVisible();
+        showToast(person.task === "idle" ? `${person.firstName} wartet wieder im Stationszimmer.` : `${person.firstName}: Tätigkeit läuft bis du sie änderst oder abbrichst.`);
+      }
+    }
+    const targetSelect = e.target.closest("[data-staff-target]");
+    if (targetSelect) {
+      const person = state.staff.find(item => String(item.id) === targetSelect.dataset.staffTarget);
+      if (person) { person.targetResidentId = targetSelect.value || null; saveState(); refreshFloorIfVisible(); }
+    }
+  });
+  document.querySelectorAll("[data-floor]").forEach(btn => btn.addEventListener("click", () => { selectedFloor = Number(btn.dataset.floor); renderFloorPlan(); }));
+  $("signContractBtn").addEventListener("click", signContract);
+  $("signStaffContractBtn").addEventListener("click", signStaffContract);
+  document.querySelectorAll("[data-speed]").forEach(btn => btn.addEventListener("click", () => setSpeed(Number(btn.dataset.speed))));
+  setInterval(gameClockTick, 1000);
+  setInterval(updateWalkers, 4300);
+  $("residentSearch").addEventListener("input", renderResidents);
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("contractModal").classList.contains("hidden")) closeModal(); else if (e.key === "Escape" && !$("staffContractModal").classList.contains("hidden")) closeStaffModal(); });
+  render();
 })();

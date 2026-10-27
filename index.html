@@ -2,73 +2,130 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#102b3a">
-  <title>Pflegeflur – Alltag im Wohnbereich</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#315a4b">
+  <title>Altenheim Simulator</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand-mark" aria-hidden="true">✚</div>
-    <div class="brand">
-      <strong>PFLEGEFLUR</strong>
-      <span>Wohnbereich · Frühdienst</span>
+    <div>
+      <div class="eyebrow">MANAGEMENT-SIMULATION</div>
+      <h1>Laurentiushaus</h1>
+      <p>Dein Altenheim · Olching</p>
     </div>
-    <div class="shift-pill"><span class="live-dot"></span><span id="clock">07:00</span></div>
+    <div class="top-stats">
+      <div><span>Bewohner</span><strong id="residentCount">0 / 100</strong></div>
+      <div><span>Spielzeit</span><strong id="gameClock">01.01.2027 08:00</strong></div>
+      <div><span>Offene Anfragen</span><strong id="requestCount">0</strong></div>
+    </div>
   </header>
 
   <main>
-    <section class="stats" aria-label="Dienstübersicht">
-      <div class="stat-card"><span class="stat-icon blue">♙</span><div><small>Bewohner</small><strong id="resident-count">4</strong></div></div>
-      <div class="stat-card"><span class="stat-icon amber">✓</span><div><small>Aufgaben erledigt</small><strong id="done-count">0 / 12</strong></div></div>
-      <div class="stat-card"><span class="stat-icon green">♥</span><div><small>Wohlbefinden</small><strong id="wellbeing">Gut</strong></div></div>
+    <section class="hero panel">
+      <img src="altenheim.png" alt="Isometrische Ansicht eines Altenheims mit Innenhof">
+      <div class="hero-overlay">
+        <span class="pill">DEIN HEIM</span>
+        <h2>Ein Zuhause fürs Alter</h2>
+        <p>Nimm Bewohner auf, prüfe Zimmeranfragen und schließe mit jedem Bewohner einen Heimvertrag ab.</p>
+      </div>
     </section>
 
-    <section class="game-panel">
+    <nav class="nav-tabs" aria-label="Spielmenü">
+      <button class="nav-btn active" data-page="overview">Übersicht</button>
+      <button class="nav-btn" data-page="contracts">Heimvertrag <span id="navRequestCount" class="nav-count">0</span></button>
+      <button class="nav-btn" data-page="residents">Bewohner</button>
+      <button class="nav-btn" data-page="finances">Finanzen</button>
+      <button class="nav-btn" data-page="upgrades">Gebäude</button>
+      <button class="nav-btn" data-page="floorplan">Wohnbereiche</button>
+      <button class="nav-btn" data-page="staff">Mitarbeiter</button>
+    </nav>
+
+    <section id="page-overview" class="page">
       <div class="section-heading">
-        <div><p class="eyebrow">WOHNBEREICH A</p><h1>Der Pflegeflur</h1></div>
-        <div class="mini-hint"><span>⌖</span> Tippe auf den Boden, um zu laufen</div>
+        <div><div class="eyebrow">LEITUNG</div><h2>Heimübersicht</h2></div>
+        <span class="status"><i></i> Geöffnet</span>
       </div>
-
-      <div class="map-frame">
-        <div class="map-legend"><span class="legend-dot resident-legend"></span> Bewohnerzimmer <span class="legend-dot you-legend"></span> Deine Figur</div>
-        <canvas id="game" aria-label="Draufsicht auf den Pflegeflur. Tippe auf eine Stelle, um die Figur dorthin zu bewegen."></canvas>
-        <div class="map-help" id="map-help">Bewohner antippen, um Pflegeaufgaben zu öffnen</div>
+      <div class="metric-grid">
+        <article class="metric"><span>Belegte Plätze</span><strong id="occupiedMetric">0</strong><small>von maximal 160</small></article>
+        <article class="metric"><span>Freie Plätze</span><strong id="freeMetric">100</strong><small>für neue Bewohner</small></article>
+        <article class="metric"><span>Verträge</span><strong id="contractMetric">0</strong><small>abgeschlossene Heimverträge</small></article>
       </div>
-
-      <div class="controls-row">
-        <div class="character-status">
-          <div class="avatar">♙</div>
-          <div><strong>Pflegekraft</strong><span id="movement-status">Bereit für den Dienst</span></div>
-        </div>
-        <button class="secondary-button" id="reset-button" type="button">↻ Dienst neu starten</button>
+      <div class="panel inner-panel">
+        <div class="section-heading compact"><div><h3>Aktuelle Hinweise</h3><p>Was in deinem Heim ansteht</p></div></div>
+        <div id="overviewNotice" class="notice">Willkommen! Unter „Heimvertrag“ kannst du Zimmeranfragen prüfen und Bewohner aufnehmen.</div>
+        <button class="primary-btn" data-goto="contracts">Zimmeranfragen ansehen <span>→</span></button>
+      </div>
+      <div class="panel inner-panel"><div class="section-heading compact"><div><h3>Spieluhr</h3><p>1 reale Minute entspricht 1 Spielstunde · Neue Bewohneranfragen alle 4 Ingame-Stunden</p></div></div><div class="clock-controls"><div class="clock-display"><span>Aktuelle Spielzeit</span><strong id="overviewClock">01.01.2027 08:00</strong></div><div class="speed-buttons" role="group" aria-label="Spielgeschwindigkeit"><button class="speed-btn active" data-speed="1">×1</button><button class="speed-btn" data-speed="3">×3</button><button class="speed-btn" data-speed="5">×5</button></div></div></div>
+      <div class="panel inner-panel"><h3>So funktioniert die Aufnahme</h3>
+        <ol class="steps">
+          <li><span>1</span><div><b>Anfrage prüfen</b><p>Sieh dir Alter, Pflegebedarf und Wunschzimmer an.</p></div></li>
+          <li><span>2</span><div><b>Heimvertrag erstellen</b><p>Der Vertrag wird zwischen dir als Heimleitung und dem Bewohner geschlossen.</p></div></li>
+          <li><span>3</span><div><b>Bewohner aufnehmen</b><p>Nach deiner Bestätigung zieht der Bewohner ein. Maximal 160 Personen sind mit allen Gebäude-Upgrades möglich.</p></div></li>
+        </ol>
       </div>
     </section>
 
-    <section class="task-panel">
-      <div class="section-heading compact">
-        <div><p class="eyebrow">DEIN ÜBERBLICK</p><h2>Offene Pflegeaufgaben</h2></div>
-        <span class="task-counter" id="task-counter">12 offen</span>
+    <section id="page-contracts" class="page hidden">
+      <div class="section-heading">
+        <div><div class="eyebrow">AUFNAHMEVERWALTUNG</div><h2>Heimvertrag</h2><p>Zimmeranfragen und Vertragsabschlüsse</p></div>
       </div>
-      <div class="task-list" id="task-list"></div>
+      <div class="subtabs">
+        <button class="subtab active" data-contract-tab="requests">Zimmeranfragen <span id="requestsTabCount">0</span></button>
+        <button class="subtab" data-contract-tab="signed">Abgeschlossen <span id="signedTabCount">0</span></button>
+      </div>
+      <div id="requestList" class="card-list"></div>
+      <div id="signedList" class="card-list hidden"></div>
     </section>
-    <p class="footer-note">Demo-Spiel · Der Spielstand wird automatisch auf diesem Gerät gespeichert.</p>
+
+    <section id="page-residents" class="page hidden">
+      <div class="section-heading">
+        <div><div class="eyebrow">BEWOHNERREGISTER</div><h2>Bewohner</h2><p>Alle aufgenommenen Bewohner deines Heims</p></div>
+      </div>
+      <div class="search-row"><input id="residentSearch" type="search" placeholder="Bewohner suchen …" aria-label="Bewohner suchen"><span id="residentTotalLabel">0 Bewohner</span></div>
+      <div id="residentList" class="card-list"></div>
+    </section>
+    <section id="page-floorplan" class="page hidden">
+      <div class="section-heading">
+        <div><div class="eyebrow">LEBEN IM LAURENTIUSHAUS</div><h2>Wohnbereiche</h2><p>Vier Etagen, persönliche Zimmer und Bewohner in Bewegung.</p></div>
+      </div>
+      <div class="floor-switcher" role="group" aria-label="Etage auswählen">
+        <button class="floor-btn active" data-floor="1"><strong>1</strong><span>Wohnbereich A</span></button>
+        <button class="floor-btn" data-floor="2"><strong>2</strong><span>Wohnbereich B</span></button>
+        <button class="floor-btn" data-floor="3"><strong>3</strong><span>Wohnbereich C</span></button>
+        <button class="floor-btn" data-floor="4"><strong>4</strong><span>Wohnbereich D</span></button>
+      </div>
+      <div class="floor-summary panel inner-panel"><div><h3 id="floorTitle">1. Etage · Wohnbereich A</h3><p>Sichtbare Gänge zwischen den Zimmern; Bewohner und Pflegekräfte bewegen sich langsam von Ort zu Ort.</p></div><strong id="floorOccupancy">0 Bewohner · 30 Zimmer</strong></div>
+      <div id="floorPlan" class="floor-plan panel" aria-live="polite"></div>
+      <p class="floor-note">Jeder Bewohner behält seine Zimmernummer. Die Bewegung ist eine visuelle Simulation und verändert weder Verträge noch Spielstand.</p>
+    </section>
+
+    <section id="page-staff" class="page hidden">
+      <div class="section-heading"><div><div class="eyebrow">PERSONALVERWALTUNG</div><h2>Mitarbeiter</h2><p>Stelle Pflegekräfte mit Arbeitsvertrag ein und verwalte die monatlichen Personalkosten.</p></div></div>
+      <div class="metric-grid"><article class="metric"><span>Pflegekräfte</span><strong id="staffCount">0</strong><small>unter Vertrag</small></article><article class="metric"><span>Monatliche Personalkosten</span><strong id="staffCosts">0 €</strong><small>900–1.100 € pro Pflegekraft</small></article><article class="metric"><span>Offene Bewerbungen</span><strong id="staffCandidatesCount">0</strong><small>für einen Arbeitsvertrag</small></article></div>
+      <div class="panel inner-panel"><h3>Pflegekräfte einstellen</h3><p class="muted-copy">Wähle eine Bewerberin oder einen Bewerber und prüfe den Arbeitsvertrag. Das Monatsgehalt wird bei Vertragsabschluss zwischen 900 € und 1.100 € festgelegt.</p><div id="staffCandidateList" class="card-list"></div></div>
+      <div class="panel inner-panel"><h3>Angestellte Pflegekräfte</h3><p class="muted-copy">Angestellte bewegen sich in den Wohnbereichen über die Gänge und gehen zu Bewohnerzimmern.</p><div id="staffList" class="card-list"></div></div>
+    </section>
+    <section id="page-finances" class="page hidden"><div class="section-heading"><div><div class="eyebrow">KASSE & ABRECHNUNG</div><h2>Finanzen</h2><p>Monatliche Bewohnerbeiträge und laufende Kosten</p></div></div><div class="metric-grid"><article class="metric"><span>Monatliche Einnahmen</span><strong id="monthlyIncome">0 €</strong><small>1.700 € pro Bewohner</small></article><article class="metric"><span>Bewohnerkosten</span><strong id="monthlyCosts">0 €</strong><small>Aktuell hinterlegte Kosten</small></article><article class="metric"><span>Monatlicher Saldo</span><strong id="monthlyBalance">0 €</strong><small>Einnahmen minus Kosten</small></article></div><div class="panel inner-panel"><h3>Einnahmen und laufende Kosten</h3><p class="muted-copy">Jeder aufgenommene Bewohner zahlt monatlich 1.700 €. Gehälter der Pflegekräfte werden als monatliche Personalkosten abgezogen.</p><div id="financeList" class="finance-list"></div></div><div class="panel inner-panel"><h3>Kostenannahme</h3><p class="muted-copy">Für den Anfang wurden keine individuellen Pflege- oder Betriebskosten vorgegeben. Deshalb zeigt das Spiel die Bewohnerbeiträge als Einnahmen und Bewohnerkosten zunächst mit 0 € an.</p></div></section>
+    <section id="page-upgrades" class="page hidden"><div class="section-heading"><div><div class="eyebrow">AUSBAU</div><h2>Gebäude-Upgrades</h2><p>Erweitere das Laurentiushaus um zusätzliche Zimmer.</p></div></div><div class="upgrade-summary panel inner-panel"><span>Aktuelle Zimmerkapazität</span><strong id="capacityDisplay">100 Zimmer</strong><p id="upgradeProgress">0 von 3 Upgrades gekauft</p></div><div id="upgradeList" class="upgrade-list"></div></section>
   </main>
 
-  <div class="modal-backdrop hidden" id="resident-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-    <section class="resident-modal">
-      <button class="close-button" id="close-modal" aria-label="Schließen">×</button>
-      <div class="modal-kicker" id="modal-room">ZIMMER 101</div>
-      <div class="resident-profile">
-        <div class="resident-avatar" id="modal-avatar">👵</div>
-        <div><h2 id="modal-title">Anna Weber</h2><p id="modal-subtitle">Bewohnerin · Zimmer 101</p><div class="mood-line"><span class="mood-dot"></span><span id="modal-mood">Benötigt Unterstützung</span></div></div>
-      </div>
-      <p class="modal-intro">Welche Pflege möchtest du durchführen?</p>
-      <div class="care-options" id="care-options"></div>
-      <div class="modal-foot">Tippe eine Aufgabe an. Die Figur läuft zum Zimmer, danach wird die Aufgabe erledigt.</div>
-    </section>
+  <footer>Altenheim Simulator <span>·</span> Spielstand wird automatisch auf diesem Gerät gespeichert</footer>
+
+  <div id="contractModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-card">
+      <div class="modal-head"><div><div class="eyebrow">VERTRAGSVORBEREITUNG</div><h2 id="modalTitle">Heimvertrag</h2></div><button class="icon-btn" data-close-modal aria-label="Schließen">×</button></div>
+      <div id="contractDocument" class="contract-document"></div>
+      <div class="form-note">Mit der Bestätigung wird der Heimvertrag im Spiel abgeschlossen und der Bewohner aufgenommen. Dies ist ein Spiel-Feature, kein rechtsverbindlicher Vertrag.</div>
+      <div id="modalError" class="error-message hidden"></div>
+      <div class="modal-actions"><button class="secondary-btn" data-close-modal>Abbrechen</button><button id="signContractBtn" class="primary-btn">Vertrag abschließen</button></div>
+    </div>
   </div>
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div id="staffContractModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="staffModalTitle">
+    <div class="modal-backdrop" data-close-staff-modal></div><div class="modal-card"><div class="modal-head"><div><div class="eyebrow">PERSONALVERTRAG</div><h2 id="staffModalTitle">Arbeitsvertrag Pflege</h2></div><button class="icon-btn" data-close-staff-modal aria-label="Schließen">×</button></div><div id="staffContractDocument" class="contract-document"></div><div class="form-note">Dieser Arbeitsvertrag gilt innerhalb der Spielsimulation. Das monatliche Gehalt wird als laufende Personalkosten verbucht.</div><div class="modal-actions"><button class="secondary-btn" data-close-staff-modal>Abbrechen</button><button id="signStaffContractBtn" class="primary-btn">Arbeitsvertrag unterschreiben</button></div></div>
+  </div>
+  <div id="toast" class="toast" role="status"></div>
   <script src="game.js"></script>
 </body>
 </html>
